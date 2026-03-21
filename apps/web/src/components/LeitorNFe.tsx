@@ -43,13 +43,21 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
 
     try {
       // Dynamic import — evita SSR do Next.js
-      const { Html5Qrcode } = await import('html5-qrcode');
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
 
       scannerRef.current = new Html5Qrcode(elementoId);
 
+      const formatos = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ];
+
       await scannerRef.current.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: formatos },
         (textoDecodificado) => {
           const chaveExtraida = extrairChave(textoDecodificado);
           if (chaveExtraida) {
@@ -175,7 +183,7 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
             width: '100%',
           }}
         >
-          📷 Escanear QR Code
+          📷 Escanear Código de Barras
         </button>
       )}
 

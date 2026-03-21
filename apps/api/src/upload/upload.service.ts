@@ -32,7 +32,7 @@ export class UploadService {
 
     const supabaseUrl = this.configService.get<string>('SUPABASE_URL');
     const supabaseKey = this.configService.get<string>('SUPABASE_KEY');
-    const bucket = this.configService.get<string>('SUPABASE_BUCKET') ?? 'entregas';
+    const bucket = this.configService.get<string>('SUPABASE_STORAGE_BUCKET') ?? 'entregas';
 
     const supabase = createClient(supabaseUrl!, supabaseKey!);
 
