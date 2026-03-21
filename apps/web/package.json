@@ -12,6 +12,8 @@
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "browser-image-compression": "^2.0.2",
     "html5-qrcode": "^2.3.8",
     "next": "^14.1.0",

@@ -4,10 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 const CHAVE_REGEX = /^\d{44}$/;
 
-/** Extrai a chave NF-e (44 dígitos) de um texto lido pelo scanner.
- *  QR Codes de NF-e costumam conter a chave embutida em uma URL ou como texto puro. */
 function extrairChave(texto: string): string | null {
-  // Tenta encontrar 44 dígitos consecutivos no texto
   const match = texto.match(/\d{44}/);
   return match ? match[0] : null;
 }
@@ -17,7 +14,7 @@ interface LeitorNFeProps {
   valorInicial?: string;
 }
 
-type EstadoScanner = 'inativo' | 'ativo' | 'erro';
+type EstadoScanner = 'inativo' | 'ativo' | 'erro' | 'sucesso';
 
 export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: LeitorNFeProps) {
   const [chave, setChave] = useState(valorInicial);
@@ -25,11 +22,9 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
   const [estadoScanner, setEstadoScanner] = useState<EstadoScanner>('inativo');
   const [erroScanner, setErroScanner] = useState<string | null>(null);
 
-  // Referência para a instância do Html5Qrcode (carregada dinamicamente)
-  const scannerRef = useRef<InstanceType<typeof import('html5-qrcode').Html5Qrcode> | null>(null);
-  const elementoId = 'leitor-qrcode';
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
 
-  // Limpa o scanner ao desmontar o componente
   useEffect(() => {
     return () => {
       pararScanner();
@@ -42,56 +37,66 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
     setEstadoScanner('ativo');
 
     try {
-      // Dynamic import — evita SSR do Next.js
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      const { BarcodeFormat, DecodeHintType } = await import('@zxing/library');
 
-      const formatos = [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.QR_CODE,
-      ];
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.ITF,
+        BarcodeFormat.QR_CODE,
+      ]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
 
-      scannerRef.current = new Html5Qrcode(elementoId, { formatsToSupport: formatos, verbose: false });
+      const reader = new BrowserMultiFormatReader(hints);
 
-      await scannerRef.current.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 300, height: 150 } },
-        (textoDecodificado) => {
-          const chaveExtraida = extrairChave(textoDecodificado);
-          if (chaveExtraida) {
-            setChave(chaveExtraida);
-            setErroValidacao(null);
-            onChaveCapturada(chaveExtraida);
-            pararScanner();
-          }
+      if (!videoRef.current) return;
+
+      const controls = await reader.decodeFromConstraints(
+        {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
         },
-        // Callback de erro de frame — ignorado silenciosamente
-        () => {},
+        videoRef.current,
+        (result, err) => {
+          if (result) {
+            const texto = result.getText();
+            const chaveExtraida = extrairChave(texto);
+            if (chaveExtraida) {
+              setChave(chaveExtraida);
+              setErroValidacao(null);
+              setEstadoScanner('sucesso');
+              controls.stop();
+              controlsRef.current = null;
+              onChaveCapturada(chaveExtraida);
+            }
+          }
+          void err;
+        },
       );
+
+      controlsRef.current = controls;
     } catch (err) {
-      const mensagem =
-        err instanceof Error ? err.message : 'Não foi possível acessar a câmera.';
+      const mensagem = err instanceof Error ? err.message : 'Não foi possível acessar a câmera.';
       setErroScanner(mensagem);
       setEstadoScanner('erro');
     }
   }
 
-  async function pararScanner() {
-    if (scannerRef.current) {
+  function pararScanner() {
+    if (controlsRef.current) {
       try {
-        const estado = scannerRef.current.getState();
-        // Estado 2 = SCANNING
-        if (estado === 2) {
-          await scannerRef.current.stop();
-        }
-        scannerRef.current.clear();
+        controlsRef.current.stop();
       } catch {
-        // Ignora erros ao parar (ex: câmera já fechada)
-      } finally {
-        scannerRef.current = null;
+        // ignora
       }
+      controlsRef.current = null;
     }
     setEstadoScanner('inativo');
   }
@@ -113,12 +118,9 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Campo de input manual */}
+      {/* Input manual */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label
-          htmlFor="chave-nfe-input"
-          style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}
-        >
+        <label htmlFor="chave-nfe-input" style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
           Chave NF-e (44 dígitos)
         </label>
         <input
@@ -139,66 +141,114 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
             boxSizing: 'border-box',
           }}
         />
-        {erroValidacao && (
-          <p style={{ margin: 0, fontSize: '13px', color: '#dc2626' }}>{erroValidacao}</p>
-        )}
-        <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
-          {chave.length}/44 dígitos
-        </p>
+        {erroValidacao && <p style={{ margin: 0, fontSize: '13px', color: '#dc2626' }}>{erroValidacao}</p>}
+        <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{chave.length}/44 dígitos</p>
       </div>
 
-      {/* Botão confirmar input manual */}
-      {estadoScanner === 'inativo' && (
-        <button
-          type="button"
-          onClick={handleConfirmar}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: '#2563eb',
-            color: '#fff',
-            cursor: 'pointer',
-            width: '100%',
-          }}
-        >
-          Confirmar Chave
-        </button>
+      {/* Botões quando inativo */}
+      {(estadoScanner === 'inativo' || estadoScanner === 'sucesso') && (
+        <>
+          <button
+            type="button"
+            onClick={handleConfirmar}
+            style={{
+              padding: '12px 16px',
+              fontSize: '16px',
+              borderRadius: '8px',
+              border: 'none',
+              backgroundColor: '#2563eb',
+              color: '#fff',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+          >
+            Confirmar Chave
+          </button>
+          <button
+            type="button"
+            onClick={iniciarScanner}
+            style={{
+              padding: '12px 16px',
+              fontSize: '16px',
+              borderRadius: '8px',
+              border: '1px solid #2563eb',
+              backgroundColor: '#fff',
+              color: '#2563eb',
+              cursor: 'pointer',
+              width: '100%',
+            }}
+          >
+            📷 Escanear Código de Barras
+          </button>
+        </>
       )}
 
-      {/* Botão iniciar scanner */}
-      {estadoScanner === 'inativo' && (
-        <button
-          type="button"
-          onClick={iniciarScanner}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            borderRadius: '8px',
-            border: '1px solid #2563eb',
-            backgroundColor: '#fff',
-            color: '#2563eb',
-            cursor: 'pointer',
-            width: '100%',
-          }}
-        >
-          📷 Escanear Código de Barras
-        </button>
-      )}
-
-      {/* Área do scanner de câmera */}
+      {/* Scanner ativo — vídeo horizontal com linha de mira */}
       {estadoScanner === 'ativo' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div
-            id={elementoId}
             style={{
+              position: 'relative',
               width: '100%',
               borderRadius: '8px',
               overflow: 'hidden',
               border: '1px solid #d1d5db',
+              backgroundColor: '#000',
+              aspectRatio: '16/9',
             }}
-          />
+          >
+            <video
+              ref={videoRef}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              muted
+              playsInline
+            />
+            {/* Linha de mira horizontal — igual apps de banco */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '10%',
+                right: '10%',
+                height: '2px',
+                backgroundColor: '#ef4444',
+                transform: 'translateY(-50%)',
+                boxShadow: '0 0 6px 2px rgba(239,68,68,0.6)',
+              }}
+            />
+            {/* Cantos do frame de mira */}
+            {[
+              { top: '25%', left: '10%', borderTop: '3px solid #ef4444', borderLeft: '3px solid #ef4444' },
+              { top: '25%', right: '10%', borderTop: '3px solid #ef4444', borderRight: '3px solid #ef4444' },
+              { bottom: '25%', left: '10%', borderBottom: '3px solid #ef4444', borderLeft: '3px solid #ef4444' },
+              { bottom: '25%', right: '10%', borderBottom: '3px solid #ef4444', borderRight: '3px solid #ef4444' },
+            ].map((style, i) => (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  width: '20px',
+                  height: '20px',
+                  ...style,
+                }}
+              />
+            ))}
+            <p
+              style={{
+                position: 'absolute',
+                bottom: '8px',
+                left: 0,
+                right: 0,
+                textAlign: 'center',
+                margin: 0,
+                fontSize: '13px',
+                color: '#fff',
+                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+              }}
+            >
+              Aponte o código de barras para a linha vermelha
+            </p>
+          </div>
           <button
             type="button"
             onClick={pararScanner}
@@ -213,12 +263,12 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
               width: '100%',
             }}
           >
-            Parar leitura
+            Cancelar
           </button>
         </div>
       )}
 
-      {/* Erro ao acessar câmera — fallback para input manual */}
+      {/* Erro de câmera */}
       {estadoScanner === 'erro' && erroScanner && (
         <div
           style={{
@@ -232,12 +282,8 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
             gap: '8px',
           }}
         >
-          <p style={{ margin: 0, fontSize: '14px' }}>
-            Não foi possível iniciar a câmera: {erroScanner}
-          </p>
-          <p style={{ margin: 0, fontSize: '13px' }}>
-            Use o campo acima para digitar a chave manualmente.
-          </p>
+          <p style={{ margin: 0, fontSize: '14px' }}>Não foi possível iniciar a câmera: {erroScanner}</p>
+          <p style={{ margin: 0, fontSize: '13px' }}>Use o campo acima para digitar a chave manualmente.</p>
           <button
             type="button"
             onClick={() => setEstadoScanner('inativo')}
