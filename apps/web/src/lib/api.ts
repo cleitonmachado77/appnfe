@@ -80,6 +80,27 @@ export interface CriarEntregaDto {
   imagens: ImagemEntregaDto[];
 }
 
+export interface DadosNfe {
+  emit_nome: string | null;
+  emit_cnpj: string | null;
+  emit_uf: string | null;
+  dest_nome: string | null;
+  dest_cnpj_cpf: string | null;
+  dest_municipio: string | null;
+  dest_uf: string | null;
+  numero_nfe: string | null;
+  serie: string | null;
+  data_emissao: string | null;
+  valor_total: number | null;
+  valor_produtos: number | null;
+  valor_frete: number | null;
+  valor_desconto: number | null;
+  quantidade_itens: number | null;
+  natureza_operacao: string | null;
+  transportadora_nome: string | null;
+  peso_bruto: number | null;
+}
+
 export interface EntregaResponse {
   id: string;
   chave_nfe: string;
@@ -90,6 +111,8 @@ export interface EntregaResponse {
   longitude: number;
   status: 'ENVIADO' | 'PENDENTE' | 'ERRO';
   imagens: { id: string; tipo: 'CANHOTO' | 'LOCAL'; url_arquivo: string }[];
+  danfe_pdf_base64?: string | null;
+  dados_nfe?: DadosNfe | null;
 }
 
 export async function criarEntrega(
@@ -168,6 +191,23 @@ export async function buscarEntrega(id: string, token: string): Promise<EntregaR
   return res.json();
 }
 
+export async function reprocessarDanfe(
+  id: string,
+  token: string,
+): Promise<{ danfe_pdf_base64: string | null }> {
+  const res = await fetch(`${API_URL}/entregas/${id}/danfe`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao reprocessar DANFE');
+  }
+
+  return res.json();
+}
+
 export interface UsuarioResponse {
   id: string;
   nome: string;
@@ -207,4 +247,54 @@ export async function criarUsuario(
   }
 
   return res.json();
+}
+
+// ---- Dashboard ----
+
+export interface DashboardData {
+  kpis: {
+    totalEntregas: number;
+    valorTotal: number;
+    ticketMedio: number;
+    nfeUnicas: number;
+    entregasPorStatus: { status: string; count: number }[];
+    pesoTotal: number;
+    tempoMedioHoras: number;
+  };
+  entregasPorPeriodo: { data: string; count: number }[];
+  entregasPorEntregador: { nome: string; count: number; valor: number }[];
+  entregasPorStatus: { status: string; count: number }[];
+  faturamentoPorPeriodo: { data: string; valor: number }[];
+  distribuicaoValores: { faixa: string; count: number }[];
+  composicaoValores: { produtos: number; frete: number; desconto: number };
+  topEmitentes: { nome: string; cnpj: string; count: number; valor: number }[];
+  topDestinatarios: { nome: string; cnpj_cpf: string; count: number; valor: number }[];
+  notasPorUf: {
+    emitente: { uf: string; count: number }[];
+    destinatario: { uf: string; count: number }[];
+  };
+  naturezaOperacao: { natureza: string; count: number }[];
+  itensPorNota: { faixa: string; count: number }[];
+  tempoPorPeriodo: { data: string; horas: number }[];
+  valorPorEntregador: { nome: string; valor: number; count: number }[];
+  entregas: { lat: number; lng: number; valor: number; dest_nome: string; chave_nfe: string }[];
+}
+
+export async function getDashboard(token: string): Promise<DashboardData> {
+  const res = await fetch(`${API_URL}/dashboard`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar dashboard');
+  return res.json();
+}
+
+export async function excluirEntrega(id: string, token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/entregas/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao excluir entrega');
+  }
 }

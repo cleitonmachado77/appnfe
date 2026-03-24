@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -42,5 +43,19 @@ export class EntregasController {
   @HttpCode(HttpStatus.OK)
   async buscarPorId(@Param('id') id: string) {
     return this.entregasService.buscarPorId(id);
+  }
+
+  @Post(':id/danfe')
+  @Roles('ADMIN')
+  @HttpCode(HttpStatus.OK)
+  async reprocessarDanfe(@Param('id') id: string) {
+    return this.entregasService.reprocessarDanfe(id);
+  }
+
+  @Delete(':id')
+  @Roles('ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async excluir(@Param('id') id: string) {
+    return this.entregasService.excluir(id);
   }
 }

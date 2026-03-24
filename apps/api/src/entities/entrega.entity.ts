@@ -5,11 +5,13 @@ import {
   CreateDateColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
   JoinColumn,
   Index,
 } from 'typeorm';
 import { Usuario } from './usuario.entity';
 import { Imagem } from './imagem.entity';
+import { DadosNfe } from './dados-nfe.entity';
 
 export enum StatusEntrega {
   ENVIADO = 'ENVIADO',
@@ -43,6 +45,9 @@ export class Entrega {
   @Column({ type: 'enum', enum: StatusEntrega, default: StatusEntrega.ENVIADO })
   status!: StatusEntrega;
 
+  @Column({ type: 'text', nullable: true })
+  danfe_pdf_base64!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em!: Date;
 
@@ -52,4 +57,7 @@ export class Entrega {
 
   @OneToMany(() => Imagem, (imagem) => imagem.entrega)
   imagens!: Imagem[];
+
+  @OneToOne(() => DadosNfe, (d) => d.entrega)
+  dadosNfe!: DadosNfe;
 }

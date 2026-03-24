@@ -3,96 +3,75 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  getToken,
-  listarEntregas,
-  listarUsuarios,
-  type EntregaResponse,
-  type UsuarioResponse,
-  type FiltrosEntrega,
+  getToken, listarEntregas, listarUsuarios, excluirEntrega,
+  type EntregaResponse, type UsuarioResponse, type FiltrosEntrega,
 } from '@/lib/api';
+import { colors, fonts, radius } from '@/lib/brand';
 
 export default function EntregasPage() {
   const router = useRouter();
-
   const [entregas, setEntregas] = useState<EntregaResponse[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-
-  // Filtros
   const [entregadorId, setEntregadorId] = useState('');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [chaveNfe, setChaveNfe] = useState('');
   const [page, setPage] = useState(1);
+  const [excluindo, setExcluindo] = useState<string | null>(null);
   const LIMIT = 20;
 
-  const buscar = useCallback(
-    async (filtros: FiltrosEntrega) => {
-      const token = getToken();
-      if (!token) { router.replace('/login'); return; }
-      setCarregando(true);
-      setErro('');
-      try {
-        const res = await listarEntregas(filtros, token);
-        setEntregas(res.data);
-        setTotal(res.total);
-      } catch (e) {
-        setErro(e instanceof Error ? e.message : 'Erro ao carregar entregas');
-      } finally {
-        setCarregando(false);
-      }
-    },
-    [router],
-  );
+  const buscar = useCallback(async (filtros: FiltrosEntrega) => {
+    const token = getToken();
+    if (!token) { router.replace('/login'); return; }
+    setCarregando(true); setErro('');
+    try {
+      const res = await listarEntregas(filtros, token);
+      setEntregas(res.data); setTotal(res.total);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao carregar entregas');
+    } finally { setCarregando(false); }
+  }, [router]);
 
-  // Carrega usuários para o select de filtro
   useEffect(() => {
     const token = getToken();
     if (!token) return;
-    listarUsuarios(token)
-      .then(setUsuarios)
-      .catch(() => {});
+    listarUsuarios(token).then(setUsuarios).catch(() => {});
   }, []);
 
-  // Busca inicial
-  useEffect(() => {
-    buscar({ page: 1, limit: LIMIT });
-  }, [buscar]);
+  useEffect(() => { buscar({ page: 1, limit: LIMIT }); }, [buscar]);
 
   function handleFiltrar(e: React.FormEvent) {
-    e.preventDefault();
-    setPage(1);
-    buscar({
-      entregador_id: entregadorId || undefined,
-      data_inicio: dataInicio || undefined,
-      data_fim: dataFim || undefined,
-      chave_nfe: chaveNfe || undefined,
-      page: 1,
-      limit: LIMIT,
-    });
+    e.preventDefault(); setPage(1);
+    buscar({ entregador_id: entregadorId || undefined, data_inicio: dataInicio || undefined, data_fim: dataFim || undefined, chave_nfe: chaveNfe || undefined, page: 1, limit: LIMIT });
   }
 
   function handleLimpar() {
-    setEntregadorId('');
-    setDataInicio('');
-    setDataFim('');
-    setChaveNfe('');
-    setPage(1);
+    setEntregadorId(''); setDataInicio(''); setDataFim(''); setChaveNfe(''); setPage(1);
     buscar({ page: 1, limit: LIMIT });
   }
 
   function handlePagina(nova: number) {
     setPage(nova);
-    buscar({
-      entregador_id: entregadorId || undefined,
-      data_inicio: dataInicio || undefined,
-      data_fim: dataFim || undefined,
-      chave_nfe: chaveNfe || undefined,
-      page: nova,
-      limit: LIMIT,
-    });
+    buscar({ entregador_id: entregadorId || undefined, data_inicio: dataInicio || undefined, data_fim: dataFim || undefined, chave_nfe: chaveNfe || undefined, page: nova, limit: LIMIT });
+  }
+
+  async function handleExcluir(id: string) {
+    if (!confirm('Tem certeza que deseja excluir esta entrega? Esta ação não pode ser desfeita.')) return;
+    const token = getToken();
+    if (!token) return;
+    setExcluindo(id);
+    try {
+      await excluirEntrega(id, token);
+      setEntregas((prev) => prev.filter((e) => e.id !== id));
+      setTotal((prev) => prev - 1);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao excluir');
+    } finally {
+      setExcluindo(null);
+    }
   }
 
   const totalPaginas = Math.ceil(total / LIMIT);
@@ -102,69 +81,45 @@ export default function EntregasPage() {
       <h1 style={s.titulo}>Entregas</h1>
 
       {/* Filtros */}
-      <form onSubmit={handleFiltrar} style={s.filtrosCard}>
+      <form onSubmit={handleFiltrar} style={s.card}>
         <div style={s.filtrosGrid}>
           <div style={s.campo}>
             <label style={s.label}>Entregador</label>
-            <select
-              value={entregadorId}
-              onChange={(e) => setEntregadorId(e.target.value)}
-              style={s.input}
-            >
+            <select value={entregadorId} onChange={(e) => setEntregadorId(e.target.value)} style={s.input}>
               <option value="">Todos</option>
-              {usuarios.map((u) => (
-                <option key={u.id} value={u.id}>{u.nome}</option>
-              ))}
+              {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
             </select>
           </div>
-
           <div style={s.campo}>
             <label style={s.label}>Data início</label>
-            <input
-              type="date"
-              value={dataInicio}
-              onChange={(e) => setDataInicio(e.target.value)}
-              style={s.input}
-            />
+            <input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} style={s.input} />
           </div>
-
           <div style={s.campo}>
             <label style={s.label}>Data fim</label>
-            <input
-              type="date"
-              value={dataFim}
-              onChange={(e) => setDataFim(e.target.value)}
-              style={s.input}
-            />
+            <input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} style={s.input} />
           </div>
-
           <div style={s.campo}>
             <label style={s.label}>Chave NF-e</label>
-            <input
-              type="text"
-              value={chaveNfe}
-              onChange={(e) => setChaveNfe(e.target.value)}
-              placeholder="Busca parcial"
-              style={s.input}
-            />
+            <input type="text" value={chaveNfe} onChange={(e) => setChaveNfe(e.target.value)} placeholder="Busca parcial" style={s.input} />
           </div>
         </div>
-
         <div style={s.filtrosBotoes}>
           <button type="submit" style={s.btnPrimario}>Filtrar</button>
           <button type="button" onClick={handleLimpar} style={s.btnSecundario}>Limpar</button>
         </div>
       </form>
 
-      {/* Erro */}
       {erro && <p style={s.erro}>{erro}</p>}
 
-      {/* Tabela */}
       {carregando ? (
-        <p style={s.info}>Carregando…</p>
+        <div style={s.loadingWrap}>
+          <span style={s.spinner} />
+          <span style={{ color: colors.textSecondary, fontFamily: fonts.body }}>Carregando…</span>
+        </div>
       ) : entregas.length === 0 ? (
         <div style={s.vazio}>
-          <p>Nenhuma entrega encontrada para os filtros aplicados.</p>
+          <span style={{ fontSize: '2rem' }}>📦</span>
+          <p style={{ color: colors.textSecondary, fontFamily: fonts.body }}>Nenhuma entrega encontrada.</p>
         </div>
       ) : (
         <>
@@ -172,11 +127,9 @@ export default function EntregasPage() {
             <table style={s.tabela}>
               <thead>
                 <tr>
-                  <th style={s.th}>Data/Hora</th>
-                  <th style={s.th}>Entregador</th>
-                  <th style={s.th}>Chave NF-e</th>
-                  <th style={s.th}>Status</th>
-                  <th style={s.th}>Ações</th>
+                  {['Data/Hora', 'Entregador', 'Chave NF-e', 'Status', 'DANFE', 'Ações'].map((h) => (
+                    <th key={h} style={s.th}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -184,18 +137,23 @@ export default function EntregasPage() {
                   <tr key={e.id} style={s.tr}>
                     <td style={s.td}>{new Date(e.data_hora).toLocaleString('pt-BR')}</td>
                     <td style={s.td}>{e.entregador_nome}</td>
-                    <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '12px' }}>
-                      {e.chave_nfe}
+                    <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '12px', color: colors.textSecondary }}>{e.chave_nfe}</td>
+                    <td style={s.td}><span style={{ ...s.badge, ...badgeStyle(e.status) }}>{e.status}</span></td>
+                    <td style={s.td}>
+                      <span style={{ fontSize: '1rem' }} title={e.danfe_pdf_base64 ? 'DANFE disponível' : 'DANFE pendente'}>
+                        {e.danfe_pdf_base64 ? '✅' : '⏳'}
+                      </span>
                     </td>
                     <td style={s.td}>
-                      <span style={{ ...s.badge, ...badgeColor(e.status) }}>{e.status}</span>
-                    </td>
-                    <td style={s.td}>
+                      <button onClick={() => router.push(`/admin/entregas/${e.id}`)} style={s.btnLink}>
+                        Ver detalhes →
+                      </button>
                       <button
-                        onClick={() => router.push(`/admin/entregas/${e.id}`)}
-                        style={s.btnLink}
+                        onClick={() => handleExcluir(e.id)}
+                        disabled={excluindo === e.id}
+                        style={{ ...s.btnLink, color: colors.error, marginLeft: '0.75rem', opacity: excluindo === e.id ? 0.5 : 1 }}
                       >
-                        Ver detalhes
+                        {excluindo === e.id ? '…' : 'Excluir'}
                       </button>
                     </td>
                   </tr>
@@ -204,26 +162,13 @@ export default function EntregasPage() {
             </table>
           </div>
 
-          {/* Paginação */}
           {totalPaginas > 1 && (
             <div style={s.paginacao}>
-              <button
-                onClick={() => handlePagina(page - 1)}
-                disabled={page === 1}
-                style={page === 1 ? s.btnPagDisabled : s.btnPag}
-              >
-                ← Anterior
-              </button>
-              <span style={s.paginacaoInfo}>
+              <button onClick={() => handlePagina(page - 1)} disabled={page === 1} style={page === 1 ? s.btnPagDisabled : s.btnPag}>← Anterior</button>
+              <span style={{ fontSize: '0.875rem', color: colors.textSecondary, fontFamily: fonts.body }}>
                 Página {page} de {totalPaginas} ({total} registros)
               </span>
-              <button
-                onClick={() => handlePagina(page + 1)}
-                disabled={page === totalPaginas}
-                style={page === totalPaginas ? s.btnPagDisabled : s.btnPag}
-              >
-                Próxima →
-              </button>
+              <button onClick={() => handlePagina(page + 1)} disabled={page === totalPaginas} style={page === totalPaginas ? s.btnPagDisabled : s.btnPag}>Próxima →</button>
             </div>
           )}
         </>
@@ -232,125 +177,34 @@ export default function EntregasPage() {
   );
 }
 
-function badgeColor(status: string): React.CSSProperties {
-  if (status === 'ENVIADO') return { backgroundColor: '#dcfce7', color: '#15803d' };
-  if (status === 'ERRO') return { backgroundColor: '#fef2f2', color: '#b91c1c' };
-  return { backgroundColor: '#fef9c3', color: '#854d0e' };
+function badgeStyle(status: string): React.CSSProperties {
+  if (status === 'ENVIADO') return { backgroundColor: colors.successBg, color: colors.success, border: `1px solid ${colors.successBorder}` };
+  if (status === 'ERRO') return { backgroundColor: colors.errorBg, color: colors.error, border: `1px solid ${colors.errorBorder}` };
+  return { backgroundColor: colors.warningBg, color: colors.warning, border: `1px solid ${colors.warningBorder}` };
 }
 
 const s: Record<string, React.CSSProperties> = {
-  titulo: { fontSize: '1.5rem', fontWeight: 700, color: '#111827', marginBottom: '1.25rem' },
-  filtrosCard: {
-    backgroundColor: '#fff',
-    borderRadius: '0.5rem',
-    padding: '1rem',
-    marginBottom: '1.25rem',
-    border: '1px solid #e5e7eb',
-  },
-  filtrosGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-    gap: '0.75rem',
-    marginBottom: '0.75rem',
-  },
+  titulo: { fontSize: '1.5rem', fontWeight: 700, color: colors.textPrimary, marginBottom: '1.25rem', fontFamily: fonts.title },
+  card: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: '1.25rem', marginBottom: '1.25rem', border: `1px solid ${colors.border}` },
+  filtrosGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' },
   campo: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  label: { fontSize: '0.8rem', fontWeight: 500, color: '#374151' },
-  input: {
-    padding: '0.5rem 0.625rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '0.375rem',
-    fontSize: '0.875rem',
-    outline: 'none',
-  },
+  label: { fontSize: '0.75rem', fontWeight: 500, color: colors.textSecondary, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  input: { padding: '0.5rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: '0.875rem', outline: 'none', backgroundColor: colors.bgSecondary, color: colors.textPrimary, fontFamily: fonts.body },
   filtrosBotoes: { display: 'flex', gap: '0.5rem' },
-  btnPrimario: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#1a56db',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '0.375rem',
-    fontSize: '0.875rem',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  btnSecundario: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#fff',
-    color: '#374151',
-    border: '1px solid #d1d5db',
-    borderRadius: '0.375rem',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-  },
-  erro: { color: '#dc2626', fontSize: '0.875rem', marginBottom: '1rem' },
-  info: { color: '#6b7280', fontSize: '0.875rem' },
-  vazio: {
-    backgroundColor: '#fff',
-    border: '1px solid #e5e7eb',
-    borderRadius: '0.5rem',
-    padding: '2rem',
-    textAlign: 'center',
-    color: '#6b7280',
-  },
-  tabelaWrapper: { overflowX: 'auto', borderRadius: '0.5rem', border: '1px solid #e5e7eb' },
-  tabela: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff' },
-  th: {
-    padding: '0.75rem 1rem',
-    textAlign: 'left',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    borderBottom: '1px solid #e5e7eb',
-    backgroundColor: '#f9fafb',
-  },
-  td: {
-    padding: '0.75rem 1rem',
-    fontSize: '0.875rem',
-    color: '#111827',
-    borderBottom: '1px solid #f3f4f6',
-  },
+  btnPrimario: { padding: '0.5rem 1.25rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.md, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.title },
+  btnSecundario: { padding: '0.5rem 1.25rem', backgroundColor: 'transparent', color: colors.textSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.md, fontSize: '0.875rem', cursor: 'pointer', fontFamily: fonts.body },
+  erro: { color: colors.error, fontSize: '0.875rem', marginBottom: '1rem', fontFamily: fonts.body },
+  loadingWrap: { display: 'flex', alignItems: 'center', gap: '10px', padding: '2rem' },
+  spinner: { display: 'inline-block', width: '18px', height: '18px', border: `2px solid ${colors.border}`, borderTopColor: colors.accent, borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  vazio: { backgroundColor: colors.bgCard, border: `1px dashed ${colors.border}`, borderRadius: radius.lg, padding: '3rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' },
+  tabelaWrapper: { overflowX: 'auto', borderRadius: radius.lg, border: `1px solid ${colors.border}` },
+  tabela: { width: '100%', borderCollapse: 'collapse', backgroundColor: colors.bgCard },
+  th: { padding: '0.875rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${colors.border}`, backgroundColor: colors.bgSecondary, fontFamily: fonts.body },
+  td: { padding: '0.875rem 1rem', fontSize: '0.875rem', color: colors.textPrimary, borderBottom: `1px solid ${colors.border}`, fontFamily: fonts.body },
   tr: {},
-  badge: {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: '9999px',
-    fontSize: '0.75rem',
-    fontWeight: 600,
-  },
-  btnLink: {
-    background: 'none',
-    border: 'none',
-    color: '#1a56db',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-    padding: 0,
-    textDecoration: 'underline',
-  },
-  paginacao: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '1rem',
-    marginTop: '1rem',
-  },
-  paginacaoInfo: { fontSize: '0.875rem', color: '#6b7280' },
-  btnPag: {
-    padding: '0.375rem 0.75rem',
-    border: '1px solid #d1d5db',
-    borderRadius: '0.375rem',
-    backgroundColor: '#fff',
-    fontSize: '0.875rem',
-    cursor: 'pointer',
-  },
-  btnPagDisabled: {
-    padding: '0.375rem 0.75rem',
-    border: '1px solid #e5e7eb',
-    borderRadius: '0.375rem',
-    backgroundColor: '#f9fafb',
-    fontSize: '0.875rem',
-    color: '#9ca3af',
-    cursor: 'not-allowed',
-  },
+  badge: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body },
+  btnLink: { background: 'none', border: 'none', color: colors.accent, fontSize: '0.875rem', cursor: 'pointer', padding: 0, fontFamily: fonts.body, fontWeight: 500 },
+  paginacao: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.25rem' },
+  btnPag: { padding: '0.375rem 0.875rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, backgroundColor: colors.bgCard, color: colors.textSecondary, fontSize: '0.875rem', cursor: 'pointer', fontFamily: fonts.body },
+  btnPagDisabled: { padding: '0.375rem 0.875rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, backgroundColor: 'transparent', color: colors.textMuted, fontSize: '0.875rem', cursor: 'not-allowed', fontFamily: fonts.body },
 };

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { colors, fonts, radius } from '@/lib/brand';
 
 const CHAVE_REGEX = /^\d{44}$/;
-
 function extrairChave(texto: string): string | null {
   const match = texto.match(/\d{44}/);
   return match ? match[0] : null;
@@ -16,7 +16,6 @@ interface LeitorNFeProps {
 
 type EstadoScanner = 'inativo' | 'ativo' | 'erro' | 'sucesso';
 
-// Verifica se o browser suporta BarcodeDetector nativo
 function temBarcodeDetectorNativo(): boolean {
   return typeof window !== 'undefined' && 'BarcodeDetector' in window;
 }
@@ -35,45 +34,27 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
   const zxingControlsRef = useRef<{ stop: () => void } | null>(null);
   const ativoRef = useRef(false);
 
-  useEffect(() => {
-    return () => { pararScanner(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { return () => { pararScanner(); }; }, []);
 
-  // ── Estratégia 1: BarcodeDetector nativo (Chrome Android, Chrome desktop) ──
   async function iniciarComBarcodeDetector() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const detector = new (window as any).BarcodeDetector({
-      formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'data_matrix'],
-    });
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-    });
-
+    const detector = new (window as any).BarcodeDetector({ formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'itf', 'qr_code', 'data_matrix'] });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } });
     streamRef.current = stream;
     if (!videoRef.current) return;
     videoRef.current.srcObject = stream;
     await videoRef.current.play();
-
     ativoRef.current = true;
 
     async function tick() {
       if (!ativoRef.current || !videoRef.current || !canvasRef.current) return;
       const video = videoRef.current;
       const canvas = canvasRef.current;
-
-      if (video.readyState < 2) {
-        rafRef.current = requestAnimationFrame(tick);
-        return;
-      }
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      if (video.readyState < 2) { rafRef.current = requestAnimationFrame(tick); return; }
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.drawImage(video, 0, 0);
-
       try {
         const resultados = await detector.detect(canvas);
         for (const r of resultados) {
@@ -81,127 +62,85 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
           setUltimoLido(texto);
           const chaveExtraida = extrairChave(texto);
           if (chaveExtraida) {
-            ativoRef.current = false;
-            pararStream();
-            setChave(chaveExtraida);
-            setErroValidacao(null);
-            setEstadoScanner('sucesso');
-            onChaveCapturada(chaveExtraida);
-            return;
+            ativoRef.current = false; pararStream();
+            setChave(chaveExtraida); setErroValidacao(null); setEstadoScanner('sucesso');
+            onChaveCapturada(chaveExtraida); return;
           }
         }
-      } catch {
-        // frame sem código — normal
-      }
-
+      } catch { /* frame sem codigo */ }
       rafRef.current = requestAnimationFrame(tick);
     }
-
     rafRef.current = requestAnimationFrame(tick);
   }
 
-  // ── Estratégia 2: @zxing/browser (fallback para Safari/Firefox) ──
   async function iniciarComZxing() {
     const { BrowserMultiFormatReader } = await import('@zxing/browser');
     const { BarcodeFormat, DecodeHintType } = await import('@zxing/library');
-
     const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.CODE_39,
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.ITF,
-      BarcodeFormat.QR_CODE,
-    ]);
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.ITF, BarcodeFormat.QR_CODE]);
     hints.set(DecodeHintType.TRY_HARDER, true);
-
     const reader = new BrowserMultiFormatReader(hints);
     if (!videoRef.current) return;
-
     const controls = await reader.decodeFromConstraints(
       { video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } } },
       videoRef.current,
       (result, err) => {
         if (result) {
-          const texto = result.getText();
-          setUltimoLido(texto);
+          const texto = result.getText(); setUltimoLido(texto);
           const chaveExtraida = extrairChave(texto);
           if (chaveExtraida) {
-            controls.stop();
-            zxingControlsRef.current = null;
-            setChave(chaveExtraida);
-            setErroValidacao(null);
-            setEstadoScanner('sucesso');
+            controls.stop(); zxingControlsRef.current = null;
+            setChave(chaveExtraida); setErroValidacao(null); setEstadoScanner('sucesso');
             onChaveCapturada(chaveExtraida);
           }
         }
         void err;
       },
     );
-
     zxingControlsRef.current = controls;
   }
 
   async function iniciarScanner() {
-    setErroScanner(null);
-    setUltimoLido(null);
-    setEstadoScanner('ativo');
-    ativoRef.current = true;
-
+    setErroScanner(null); setUltimoLido(null); setEstadoScanner('ativo'); ativoRef.current = true;
     try {
-      if (temBarcodeDetectorNativo()) {
-        await iniciarComBarcodeDetector();
-      } else {
-        await iniciarComZxing();
-      }
+      if (temBarcodeDetectorNativo()) await iniciarComBarcodeDetector();
+      else await iniciarComZxing();
     } catch (err) {
-      const mensagem = err instanceof Error ? err.message : 'Não foi possível acessar a câmera.';
-      setErroScanner(mensagem);
+      setErroScanner(err instanceof Error ? err.message : 'Nao foi possivel acessar a camera.');
       setEstadoScanner('erro');
     }
   }
 
   function pararStream() {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) { videoRef.current.srcObject = null; }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+    if (videoRef.current) videoRef.current.srcObject = null;
   }
 
   function pararScanner() {
-    ativoRef.current = false;
-    pararStream();
-    if (zxingControlsRef.current) {
-      try { zxingControlsRef.current.stop(); } catch { /* ignora */ }
-      zxingControlsRef.current = null;
-    }
+    ativoRef.current = false; pararStream();
+    if (zxingControlsRef.current) { try { zxingControlsRef.current.stop(); } catch { /* ignora */ } zxingControlsRef.current = null; }
     setEstadoScanner('inativo');
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const valor = e.target.value.replace(/\D/g, '').slice(0, 44);
-    setChave(valor);
+    setChave(e.target.value.replace(/\D/g, '').slice(0, 44));
     setErroValidacao(null);
   }
 
   function handleConfirmar() {
-    if (!CHAVE_REGEX.test(chave)) {
-      setErroValidacao('A chave NF-e deve conter exatamente 44 dígitos numéricos.');
-      return;
-    }
-    setErroValidacao(null);
-    onChaveCapturada(chave);
+    if (!CHAVE_REGEX.test(chave)) { setErroValidacao('A chave NF-e deve conter exatamente 44 digitos numericos.'); return; }
+    setErroValidacao(null); onChaveCapturada(chave);
   }
+
+  const progresso = Math.round((chave.length / 44) * 100);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Input manual */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <label htmlFor="chave-nfe-input" style={{ fontSize: '14px', fontWeight: 600, color: '#374151' }}>
-          Chave NF-e (44 dígitos)
+      {/* Input */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label htmlFor="chave-nfe-input" style={{ fontSize: '13px', fontWeight: 500, color: colors.textSecondary, fontFamily: fonts.body }}>
+          Chave NF-e (44 digitos)
         </label>
         <input
           id="chave-nfe-input"
@@ -211,89 +150,64 @@ export default function LeitorNFe({ onChaveCapturada, valorInicial = '' }: Leito
           onChange={handleInputChange}
           placeholder="Digite ou escaneie a chave NF-e"
           maxLength={44}
-          style={{
-            padding: '12px', fontSize: '15px', borderRadius: '8px',
-            border: erroValidacao ? '1px solid #dc2626' : '1px solid #d1d5db',
-            outline: 'none', width: '100%', boxSizing: 'border-box',
-          }}
+          style={{ ...s.input, borderColor: erroValidacao ? colors.error : chave.length === 44 ? colors.success : colors.border }}
         />
-        {erroValidacao && <p style={{ margin: 0, fontSize: '13px', color: '#dc2626' }}>{erroValidacao}</p>}
-        <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>{chave.length}/44 dígitos</p>
+        {/* Barra de progresso */}
+        <div style={s.progressoTrack}>
+          <div style={{ ...s.progressoBar, width: `${progresso}%`, backgroundColor: chave.length === 44 ? colors.success : colors.accent }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          {erroValidacao && <p style={{ margin: 0, fontSize: '12px', color: colors.error, fontFamily: fonts.body }}>{erroValidacao}</p>}
+          <p style={{ margin: 0, fontSize: '12px', color: colors.textMuted, fontFamily: fonts.body, marginLeft: 'auto' }}>{chave.length}/44</p>
+        </div>
       </div>
 
-      {/* Botões quando inativo/sucesso */}
+      {/* Botoes quando inativo/sucesso */}
       {(estadoScanner === 'inativo' || estadoScanner === 'sucesso') && (
         <>
-          <button type="button" onClick={handleConfirmar}
-            style={{ padding: '12px 16px', fontSize: '16px', borderRadius: '8px', border: 'none', backgroundColor: '#2563eb', color: '#fff', cursor: 'pointer', width: '100%' }}>
-            Confirmar Chave
-          </button>
-          <button type="button" onClick={iniciarScanner}
-            style={{ padding: '12px 16px', fontSize: '16px', borderRadius: '8px', border: '1px solid #2563eb', backgroundColor: '#fff', color: '#2563eb', cursor: 'pointer', width: '100%' }}>
-            📷 Escanear Código de Barras
-          </button>
+          <button type="button" onClick={handleConfirmar} style={s.btnPrimario}>Confirmar Chave</button>
+          <button type="button" onClick={iniciarScanner} style={s.btnOutline}>📷 Escanear Codigo de Barras</button>
         </>
       )}
 
       {/* Scanner ativo */}
       {estadoScanner === 'ativo' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ position: 'relative', width: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid #d1d5db', backgroundColor: '#000', aspectRatio: '16/9' }}>
-            <video
-              ref={videoRef}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              muted playsInline autoPlay
-            />
-            {/* Canvas oculto para processamento de frames */}
+          <div style={s.scannerWrap}>
+            <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline autoPlay />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
-
-            {/* Área de leitura — faixa horizontal central */}
-            <div style={{
-              position: 'absolute', top: '35%', left: '5%', right: '5%', height: '30%',
-              border: '2px solid rgba(239,68,68,0.8)', borderRadius: '4px',
-              boxShadow: 'inset 0 0 0 2000px rgba(0,0,0,0.25)',
-            }} />
-            {/* Linha de mira */}
-            <div style={{
-              position: 'absolute', top: '50%', left: '5%', right: '5%', height: '2px',
-              backgroundColor: '#ef4444', transform: 'translateY(-50%)',
-              boxShadow: '0 0 8px 2px rgba(239,68,68,0.7)',
-            }} />
-
-            <p style={{
-              position: 'absolute', bottom: '8px', left: 0, right: 0,
-              textAlign: 'center', margin: 0, fontSize: '13px', color: '#fff',
-              textShadow: '0 1px 3px rgba(0,0,0,0.9)',
-            }}>
-              Centralize o código de barras na faixa vermelha
-            </p>
+            <div style={s.scannerOverlay} />
+            <div style={s.scannerLinha} />
+            <p style={s.scannerDica}>Centralize o codigo de barras</p>
           </div>
-
-          {/* Debug: mostra o último valor lido (qualquer código) */}
-          {ultimoLido && (
-            <p style={{ margin: 0, fontSize: '11px', color: '#6b7280', wordBreak: 'break-all' }}>
-              Lido: {ultimoLido}
-            </p>
-          )}
-
-          <button type="button" onClick={pararScanner}
-            style={{ padding: '12px 16px', fontSize: '16px', borderRadius: '8px', border: 'none', backgroundColor: '#6b7280', color: '#fff', cursor: 'pointer', width: '100%' }}>
-            Cancelar
-          </button>
+          {ultimoLido && <p style={{ margin: 0, fontSize: '11px', color: colors.textMuted, wordBreak: 'break-all', fontFamily: 'monospace' }}>Lido: {ultimoLido}</p>}
+          <button type="button" onClick={pararScanner} style={s.btnCancelar}>Cancelar</button>
         </div>
       )}
 
-      {/* Erro de câmera */}
+      {/* Erro de camera */}
       {estadoScanner === 'erro' && erroScanner && (
-        <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#fff7ed', border: '1px solid #ea580c', color: '#c2410c', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <p style={{ margin: 0, fontSize: '14px' }}>Não foi possível iniciar a câmera: {erroScanner}</p>
-          <p style={{ margin: 0, fontSize: '13px' }}>Use o campo acima para digitar a chave manualmente.</p>
-          <button type="button" onClick={() => setEstadoScanner('inativo')}
-            style={{ padding: '10px 16px', fontSize: '15px', borderRadius: '8px', border: 'none', backgroundColor: '#ea580c', color: '#fff', cursor: 'pointer', width: '100%' }}>
-            OK
-          </button>
+        <div style={s.erroBox}>
+          <p style={{ margin: 0, fontSize: '14px', fontFamily: fonts.body }}>Nao foi possivel iniciar a camera: {erroScanner}</p>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', fontFamily: fonts.body, color: colors.textSecondary }}>Use o campo acima para digitar a chave manualmente.</p>
+          <button type="button" onClick={() => setEstadoScanner('inativo')} style={s.btnRetry}>OK</button>
         </div>
       )}
     </div>
   );
 }
+
+const s: Record<string, React.CSSProperties> = {
+  input: { padding: '12px', fontSize: '15px', borderRadius: radius.md, border: `1px solid ${colors.border}`, outline: 'none', width: '100%', boxSizing: 'border-box', backgroundColor: colors.bgSecondary, color: colors.textPrimary, fontFamily: 'monospace', transition: 'border-color 0.2s' },
+  progressoTrack: { height: '3px', backgroundColor: colors.border, borderRadius: '2px', overflow: 'hidden' },
+  progressoBar: { height: '100%', borderRadius: '2px', transition: 'width 0.3s ease' },
+  btnPrimario: { padding: '12px 16px', fontSize: '15px', borderRadius: radius.md, border: 'none', backgroundColor: colors.accent, color: '#fff', cursor: 'pointer', width: '100%', fontFamily: fonts.title, fontWeight: 600 },
+  btnOutline: { padding: '12px 16px', fontSize: '15px', borderRadius: radius.md, border: `1px solid ${colors.accentBorder}`, backgroundColor: colors.accentLight, color: colors.accent, cursor: 'pointer', width: '100%', fontFamily: fonts.body },
+  scannerWrap: { position: 'relative', width: '100%', borderRadius: radius.md, overflow: 'hidden', border: `1px solid ${colors.border}`, backgroundColor: '#000', aspectRatio: '16/9' },
+  scannerOverlay: { position: 'absolute', top: '35%', left: '5%', right: '5%', height: '30%', border: `2px solid ${colors.accent}`, borderRadius: '4px', boxShadow: 'inset 0 0 0 2000px rgba(0,0,0,0.3)' },
+  scannerLinha: { position: 'absolute', top: '50%', left: '5%', right: '5%', height: '2px', backgroundColor: colors.accent, transform: 'translateY(-50%)', boxShadow: `0 0 8px 2px ${colors.accentLight}` },
+  scannerDica: { position: 'absolute', bottom: '8px', left: 0, right: 0, textAlign: 'center', margin: 0, fontSize: '12px', color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', fontFamily: fonts.body },
+  btnCancelar: { padding: '12px 16px', fontSize: '15px', borderRadius: radius.md, border: `1px solid ${colors.border}`, backgroundColor: 'transparent', color: colors.textSecondary, cursor: 'pointer', width: '100%', fontFamily: fonts.body },
+  erroBox: { padding: '12px', borderRadius: radius.md, backgroundColor: colors.errorBg, border: `1px solid ${colors.errorBorder}`, color: colors.error, display: 'flex', flexDirection: 'column', gap: '8px' },
+  btnRetry: { padding: '8px 14px', fontSize: '14px', borderRadius: radius.md, border: 'none', backgroundColor: colors.error, color: '#fff', cursor: 'pointer', fontFamily: fonts.body, alignSelf: 'flex-start' },
+};

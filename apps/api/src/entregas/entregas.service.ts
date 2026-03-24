@@ -3,8 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Entrega, StatusEntrega } from '../entities/entrega.entity';
 import { Imagem, TipoImagem } from '../entities/imagem.entity';
+import { DadosNfe } from '../entities/dados-nfe.entity';
 import { CriarEntregaDto } from './criar-entrega.dto';
 import { FiltrosEntregaDto } from './filtros-entrega.dto';
+import { MeuDanfeService } from './meudanfe.service';
 
 export interface ListagemEntregasResponse {
   data: Entrega[];
@@ -20,6 +22,9 @@ export class EntregasService {
     private readonly entregaRepository: Repository<Entrega>,
     @InjectRepository(Imagem)
     private readonly imagemRepository: Repository<Imagem>,
+    @InjectRepository(DadosNfe)
+    private readonly dadosNfeRepository: Repository<DadosNfe>,
+    private readonly meuDanfeService: MeuDanfeService,
   ) {}
 
   async criar(dto: CriarEntregaDto, entregadorId: string): Promise<Entrega> {
@@ -52,6 +57,20 @@ export class EntregasService {
     );
 
     entregaSalva.imagens = await this.imagemRepository.save(imagens);
+
+    // Busca PDF + dados XML de forma assíncrona (não bloqueia a resposta)
+    this.meuDanfeService.obterDadosCompletos(dto.chave_nfe).then(async ({ pdfBase64, dadosNfe }) => {
+      const updates: Partial<Entrega> = {};
+      if (pdfBase64) updates.danfe_pdf_base64 = pdfBase64;
+      if (Object.keys(updates).length) {
+        await this.entregaRepository.update(entregaSalva.id, updates);
+      }
+      if (dadosNfe) {
+        await this.dadosNfeRepository.save(
+          this.dadosNfeRepository.create({ ...dadosNfe, entrega_id: entregaSalva.id }),
+        );
+      }
+    });
 
     return entregaSalva;
   }
@@ -112,6 +131,10 @@ export class EntregasService {
       throw new NotFoundException(`Entrega com id ${id} não encontrada`);
     }
 
+    const dadosNfe = await this.dadosNfeRepository.findOne({
+      where: { entrega_id: id },
+    });
+
     return {
       id: entrega.id,
       chave_nfe: entrega.chave_nfe,
@@ -123,7 +146,38 @@ export class EntregasService {
       status: entrega.status,
       criado_em: entrega.criado_em,
       imagens: entrega.imagens,
+      danfe_pdf_base64: entrega.danfe_pdf_base64 ?? null,
+      dados_nfe: dadosNfe ?? null,
     };
+  }
+
+  async reprocessarDanfe(id: string): Promise<{ danfe_pdf_base64: string | null; dados_nfe: DadosNfe | null }> {    const entrega = await this.entregaRepository.findOne({ where: { id } });
+    if (!entrega) {
+      throw new NotFoundException(`Entrega com id ${id} não encontrada`);
+    }
+    const { pdfBase64, dadosNfe } = await this.meuDanfeService.obterDadosCompletos(entrega.chave_nfe);
+    if (pdfBase64) {
+      await this.entregaRepository.update(id, { danfe_pdf_base64: pdfBase64 });
+    }
+    let dadosSalvos: DadosNfe | null = null;
+    if (dadosNfe) {
+      const existente = await this.dadosNfeRepository.findOne({ where: { entrega_id: id } });
+      if (existente) {
+        await this.dadosNfeRepository.update(existente.id, dadosNfe);
+        dadosSalvos = { ...existente, ...dadosNfe } as DadosNfe;
+      } else {
+        dadosSalvos = await this.dadosNfeRepository.save(
+          this.dadosNfeRepository.create({ ...dadosNfe, entrega_id: id }),
+        );
+      }
+    }
+    return { danfe_pdf_base64: pdfBase64, dados_nfe: dadosSalvos };
+  }
+
+  async excluir(id: string): Promise<void> {
+    const entrega = await this.entregaRepository.findOne({ where: { id } });
+    if (!entrega) throw new NotFoundException(`Entrega com id ${id} não encontrada`);
+    await this.entregaRepository.delete(id);
   }
 }
 
@@ -138,4 +192,6 @@ export interface EntregaDetalheResponse {
   status: string;
   criado_em: Date;
   imagens: import('../entities/imagem.entity').Imagem[];
+  danfe_pdf_base64: string | null;
+  dados_nfe: DadosNfe | null;
 }

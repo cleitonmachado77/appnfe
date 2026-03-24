@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { colors, fonts, radius } from '@/lib/brand';
 
 type Estado =
   | { tipo: 'idle' }
@@ -14,15 +15,11 @@ interface GeolocalizacaoCapturaProps {
   onErro?: (msg: string) => void;
 }
 
-export default function GeolocalizacaoCaptura({
-  onCapturada,
-  onErro,
-}: GeolocalizacaoCapturaProps) {
+export default function GeolocalizacaoCaptura({ onCapturada, onErro }: GeolocalizacaoCapturaProps) {
   const [estado, setEstado] = useState<Estado>({ tipo: 'idle' });
 
   function capturar() {
     setEstado({ tipo: 'carregando' });
-
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = pos.coords.latitude;
@@ -32,17 +29,10 @@ export default function GeolocalizacaoCaptura({
       },
       (err) => {
         if (err.code === 1) {
-          // PERMISSION_DENIED
-          const msg =
-            'Permissão de localização negada. Habilite nas configurações do navegador.';
           setEstado({ tipo: 'erro_permissao' });
-          onErro?.(msg);
+          onErro?.('Permissao de localizacao negada. Habilite nas configuracoes do navegador.');
         } else {
-          // POSITION_UNAVAILABLE (2) ou TIMEOUT (3)
-          const msg =
-            err.code === 3
-              ? 'Tempo esgotado ao obter localização. Tente novamente.'
-              : 'Não foi possível obter a localização. Tente novamente.';
+          const msg = err.code === 3 ? 'Tempo esgotado ao obter localizacao.' : 'Nao foi possivel obter a localizacao.';
           setEstado({ tipo: 'erro_tecnico', mensagem: msg });
           onErro?.(msg);
         }
@@ -53,95 +43,51 @@ export default function GeolocalizacaoCaptura({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {/* Estado: idle ou carregando */}
       {(estado.tipo === 'idle' || estado.tipo === 'carregando') && (
-        <button
-          type="button"
-          onClick={capturar}
-          disabled={estado.tipo === 'carregando'}
-          style={{
-            padding: '12px 16px',
-            fontSize: '16px',
-            borderRadius: '8px',
-            border: 'none',
-            backgroundColor: estado.tipo === 'carregando' ? '#9ca3af' : '#2563eb',
-            color: '#fff',
-            cursor: estado.tipo === 'carregando' ? 'not-allowed' : 'pointer',
-            width: '100%',
-          }}
-        >
-          {estado.tipo === 'carregando' ? 'Obtendo localização…' : 'Capturar Localização'}
+        <button type="button" onClick={capturar} disabled={estado.tipo === 'carregando'} style={estado.tipo === 'carregando' ? s.btnCarregando : s.btn}>
+          {estado.tipo === 'carregando' ? (
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <span style={s.spinner} /> Obtendo localizacao...
+            </span>
+          ) : '📍 Capturar Localizacao'}
         </button>
       )}
 
-      {/* Estado: capturada com sucesso */}
       {estado.tipo === 'capturada' && (
-        <div
-          style={{
-            padding: '12px',
-            borderRadius: '8px',
-            backgroundColor: '#dcfce7',
-            border: '1px solid #16a34a',
-            color: '#15803d',
-          }}
-        >
-          <p style={{ margin: 0, fontWeight: 600 }}>✓ Localização capturada</p>
-          <p style={{ margin: '4px 0 0', fontSize: '14px' }}>
-            Lat: {estado.lat.toFixed(6)} &nbsp;|&nbsp; Lng: {estado.lng.toFixed(6)}
+        <div style={s.sucessoBox}>
+          <p style={{ margin: 0, fontWeight: 600, fontFamily: fonts.body, color: colors.success }}>Localizacao capturada</p>
+          <p style={{ margin: '4px 0 0', fontSize: '13px', fontFamily: 'monospace', color: colors.textSecondary }}>
+            {estado.lat.toFixed(6)} / {estado.lng.toFixed(6)}
           </p>
+          <button type="button" onClick={capturar} style={s.btnRecapturar}>Recapturar</button>
         </div>
       )}
 
-      {/* Estado: permissão negada — bloqueia envio, sem botão de retry */}
       {estado.tipo === 'erro_permissao' && (
-        <div
-          style={{
-            padding: '12px',
-            borderRadius: '8px',
-            backgroundColor: '#fef2f2',
-            border: '1px solid #dc2626',
-            color: '#b91c1c',
-          }}
-        >
-          <p style={{ margin: 0 }}>
-            Permissão de localização negada. Habilite nas configurações do navegador.
+        <div style={s.erroBox}>
+          <p style={{ margin: 0, fontFamily: fonts.body, fontSize: '14px' }}>
+            Permissao negada. Habilite a localizacao nas configuracoes do navegador.
           </p>
         </div>
       )}
 
-      {/* Estado: erro técnico (timeout / indisponível) — mostra botão de retry */}
       {estado.tipo === 'erro_tecnico' && (
-        <div
-          style={{
-            padding: '12px',
-            borderRadius: '8px',
-            backgroundColor: '#fff7ed',
-            border: '1px solid #ea580c',
-            color: '#c2410c',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}
-        >
-          <p style={{ margin: 0 }}>{estado.mensagem}</p>
-          <button
-            type="button"
-            onClick={capturar}
-            style={{
-              padding: '10px 16px',
-              fontSize: '15px',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: '#ea580c',
-              color: '#fff',
-              cursor: 'pointer',
-              width: '100%',
-            }}
-          >
-            Tentar novamente
-          </button>
+        <div style={s.warningBox}>
+          <p style={{ margin: 0, fontFamily: fonts.body, fontSize: '14px' }}>{estado.mensagem}</p>
+          <button type="button" onClick={capturar} style={s.btnRetry}>Tentar novamente</button>
         </div>
       )}
     </div>
   );
 }
+
+const s: Record<string, React.CSSProperties> = {
+  btn: { padding: '12px 16px', fontSize: '15px', borderRadius: radius.md, border: `1px solid ${colors.accentBorder}`, backgroundColor: colors.accentLight, color: colors.accent, cursor: 'pointer', width: '100%', fontFamily: fonts.body, fontWeight: 500 },
+  btnCarregando: { padding: '12px 16px', fontSize: '15px', borderRadius: radius.md, border: `1px solid ${colors.border}`, backgroundColor: colors.bgSecondary, color: colors.textMuted, cursor: 'not-allowed', width: '100%', fontFamily: fonts.body },
+  spinner: { display: 'inline-block', width: '14px', height: '14px', border: `2px solid ${colors.border}`, borderTopColor: colors.accent, borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  sucessoBox: { padding: '12px', borderRadius: radius.md, backgroundColor: colors.successBg, border: `1px solid ${colors.successBorder}`, display: 'flex', flexDirection: 'column', gap: '6px' },
+  btnRecapturar: { background: 'none', border: 'none', color: colors.accent, fontSize: '13px', cursor: 'pointer', padding: 0, fontFamily: fonts.body, textDecoration: 'underline', alignSelf: 'flex-start' },
+  erroBox: { padding: '12px', borderRadius: radius.md, backgroundColor: colors.errorBg, border: `1px solid ${colors.errorBorder}`, color: colors.error },
+  warningBox: { padding: '12px', borderRadius: radius.md, backgroundColor: colors.warningBg, border: `1px solid ${colors.warningBorder}`, color: colors.warning, display: 'flex', flexDirection: 'column', gap: '8px' },
+  btnRetry: { padding: '8px 14px', fontSize: '14px', borderRadius: radius.md, border: 'none', backgroundColor: colors.warning, color: '#fff', cursor: 'pointer', fontFamily: fonts.body, alignSelf: 'flex-start' },
+};
