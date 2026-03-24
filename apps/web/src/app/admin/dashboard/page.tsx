@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -20,14 +20,54 @@ export default function DashboardPage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
 
-  useEffect(() => {
+  // Filtros — padrão: mês atual
+  const hoje = new Date();
+  const primeiroDiaMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+  const ultimoDiaMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+  const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
+  const [dataFim, setDataFim] = useState(ultimoDiaMes);
+  const [filtroAtivo, setFiltroAtivo] = useState<'dia' | 'mes' | 'ano' | 'custom'>('mes');
+
+  function aplicarPreset(preset: 'dia' | 'mes' | 'ano') {
+    const now = new Date();
+    setFiltroAtivo(preset);
+    if (preset === 'dia') {
+      const d = now.toISOString().slice(0, 10);
+      setDataInicio(d); setDataFim(d);
+    } else if (preset === 'mes') {
+      const ini = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const fim = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+      setDataInicio(ini); setDataFim(fim);
+    } else {
+      setDataInicio(`${now.getFullYear()}-01-01`);
+      setDataFim(`${now.getFullYear()}-12-31`);
+    }
+  }
+
+  const carregar = useCallback((ini: string, fim: string) => {
     const token = getToken();
     if (!token) { router.replace('/login'); return; }
-    getDashboard(token)
+    setCarregando(true); setErro('');
+    getDashboard(token, { data_inicio: ini ? `${ini}T00:00:00` : undefined, data_fim: fim ? `${fim}T23:59:59` : undefined })
       .then(setData)
       .catch((e) => setErro(e instanceof Error ? e.message : 'Erro'))
       .finally(() => setCarregando(false));
   }, [router]);
+
+  useEffect(() => { carregar(dataInicio, dataFim); }, []);  // eslint-disable-line
+
+  function handleFiltrar(e: React.FormEvent) {
+    e.preventDefault();
+    setFiltroAtivo('custom');
+    carregar(dataInicio, dataFim);
+  }
+
+  function handleLimpar() {
+    setDataInicio(''); setDataFim('');
+    setFiltroAtivo('custom');
+    carregar('', '');
+  }
 
   if (carregando) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2rem' }}>
@@ -43,6 +83,41 @@ export default function DashboardPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <h1 style={s.titulo}>Dashboard</h1>
+
+      {/* Filtros de período */}
+      <form onSubmit={handleFiltrar} style={s.filtroCard}>
+        <div style={s.filtroPresets}>
+          {(['dia', 'mes', 'ano'] as const).map((p) => (
+            <button key={p} type="button" onClick={() => { aplicarPreset(p); carregar(
+              p === 'dia' ? new Date().toISOString().slice(0, 10) :
+              p === 'mes' ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01` :
+              `${new Date().getFullYear()}-01-01`,
+              p === 'dia' ? new Date().toISOString().slice(0, 10) :
+              p === 'mes' ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()).padStart(2, '0')}` :
+              `${new Date().getFullYear()}-12-31`
+            ); }}
+              style={{ ...s.btnPreset, ...(filtroAtivo === p ? s.btnPresetAtivo : {}) }}>
+              {p === 'dia' ? 'Hoje' : p === 'mes' ? 'Este mês' : 'Este ano'}
+            </button>
+          ))}
+          <button type="button" onClick={handleLimpar} style={{ ...s.btnPreset, ...(filtroAtivo === 'custom' && !dataInicio && !dataFim ? s.btnPresetAtivo : {}) }}>
+            Todos
+          </button>
+        </div>
+        <div style={s.filtroInputs}>
+          <div style={s.filtroGrupo}>
+            <label style={s.filtroLabel}>De</label>
+            <input type="date" value={dataInicio} onChange={(e) => { setDataInicio(e.target.value); setFiltroAtivo('custom'); }} style={s.filtroInput} />
+          </div>
+          <div style={s.filtroGrupo}>
+            <label style={s.filtroLabel}>Até</label>
+            <input type="date" value={dataFim} onChange={(e) => { setDataFim(e.target.value); setFiltroAtivo('custom'); }} style={s.filtroInput} />
+          </div>
+          <button type="submit" style={s.btnAplicar} disabled={carregando}>
+            {carregando ? '…' : 'Aplicar'}
+          </button>
+        </div>
+      </form>
 
       {/* KPIs */}
       <div style={s.kpiGrid}>
@@ -306,6 +381,15 @@ const tooltipStyle = { backgroundColor: colors.bgCard, border: `1px solid ${colo
 
 const s: Record<string, React.CSSProperties> = {
   titulo: { fontSize: '1.5rem', fontWeight: 700, color: colors.textPrimary, margin: '0 0 0.25rem', fontFamily: fonts.title },
+  filtroCard: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1rem 1.25rem', display: 'flex', flexWrap: 'wrap' as const, gap: '0.75rem', alignItems: 'flex-end', justifyContent: 'space-between' },
+  filtroPresets: { display: 'flex', gap: '0.375rem', flexWrap: 'wrap' as const },
+  btnPreset: { padding: '0.375rem 0.875rem', fontSize: '0.8rem', fontWeight: 500, borderRadius: radius.full, border: `1px solid ${colors.border}`, backgroundColor: 'transparent', color: colors.textSecondary, cursor: 'pointer', fontFamily: fonts.body },
+  btnPresetAtivo: { backgroundColor: colors.accentLight, color: colors.accent, borderColor: colors.accentBorder },
+  filtroInputs: { display: 'flex', gap: '0.5rem', alignItems: 'flex-end', flexWrap: 'wrap' as const },
+  filtroGrupo: { display: 'flex', flexDirection: 'column' as const, gap: '3px' },
+  filtroLabel: { fontSize: '0.7rem', color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
+  filtroInput: { padding: '0.4rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: '0.85rem', backgroundColor: colors.bgSecondary, color: colors.textPrimary, fontFamily: fonts.body, outline: 'none' },
+  btnAplicar: { padding: '0.4rem 1rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.sm, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.title },
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' },
   kpiCard: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.875rem' },
   row2: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap' },

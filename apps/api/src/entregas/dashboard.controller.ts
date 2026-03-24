@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -12,7 +12,13 @@ export class DashboardController {
   @Get()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
-  async getDashboard() {
-    return this.dashboardService.getDashboard();
+  async getDashboard(
+    @Query('data_inicio') dataInicio?: string,
+    @Query('data_fim') dataFim?: string,
+  ) {
+    return this.dashboardService.getDashboard({
+      data_inicio: dataInicio,
+      data_fim: dataFim,
+    });
   }
 }

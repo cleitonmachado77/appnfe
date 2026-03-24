@@ -280,8 +280,12 @@ export interface DashboardData {
   entregas: { lat: number; lng: number; valor: number; dest_nome: string; chave_nfe: string }[];
 }
 
-export async function getDashboard(token: string): Promise<DashboardData> {
-  const res = await fetch(`${API_URL}/dashboard`, {
+export async function getDashboard(token: string, filtros?: { data_inicio?: string; data_fim?: string }): Promise<DashboardData> {
+  const params = new URLSearchParams();
+  if (filtros?.data_inicio) params.set('data_inicio', filtros.data_inicio);
+  if (filtros?.data_fim) params.set('data_fim', filtros.data_fim);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_URL}/dashboard${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar dashboard');
