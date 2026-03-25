@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { getToken, getMinhaContaInfo } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
@@ -71,6 +72,11 @@ export default function MinhaContaPage() {
           </div>
         </div>
       )}
+
+      {/* Acesso rápido */}
+      <Link href="/admin/minha-conta/logs" style={s.linkLogs}>
+        📋 Ver Logs de Auditoria →
+      </Link>
     </div>
   );
 }
@@ -94,4 +100,5 @@ const s: Record<string, React.CSSProperties> = {
   secao: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1.25rem' },
   secaoTitulo: { margin: '0 0 0.5rem', fontSize: '0.75rem', fontWeight: 700, color: colors.textSecondary, fontFamily: fonts.title, textTransform: 'uppercase', letterSpacing: '0.07em' },
   linhas: { display: 'flex', flexDirection: 'column' },
+  linkLogs: { display: 'flex', alignItems: 'center', backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1rem 1.25rem', color: colors.accent, fontFamily: fonts.body, fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' },
 };

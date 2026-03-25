@@ -399,6 +399,36 @@ export async function getMinhaContaInfo(token: string): Promise<{ id: string; no
   return res.json();
 }
 
+// ---- Audit Logs ----
+
+export interface AuditLogEntry {
+  id: string;
+  usuario_id: string | null;
+  usuario_nome: string | null;
+  usuario_email: string | null;
+  empresa_id: string | null;
+  acao: string;
+  recurso: string | null;
+  recurso_id: string | null;
+  descricao: string | null;
+  metodo_http: string | null;
+  rota: string | null;
+  status_http: number | null;
+  criado_em: string;
+}
+
+export async function listarLogs(token: string, page = 1, limit = 50): Promise<{ data: AuditLogEntry[]; total: number; page: number; limit: number }> {
+  const res = await fetch(`${API_URL}/audit?page=${page}&limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar logs');
+  return res.json();
+}
+
+export function getAuditExportUrl(): string {
+  return `${API_URL}/audit/exportar`;
+}
+
 export async function excluirEntregador(id: string, token: string): Promise<void> {
   const res = await fetch(`${API_URL}/usuarios/${id}`, {
     method: 'DELETE',
