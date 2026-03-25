@@ -37,7 +37,13 @@ export class UsuariosService {
     return resultado;
   }
 
-  async listar(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
+  async excluir(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new Error('Entregador não encontrado');
+    await this.usuariosRepository.delete(id);
+  }
     const where: any = { tipo: PerfilUsuario.ENTREGADOR };
     if (empresa_id) where.empresa_id = empresa_id;
 

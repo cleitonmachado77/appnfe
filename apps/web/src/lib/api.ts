@@ -399,6 +399,17 @@ export async function getMinhaContaInfo(token: string): Promise<{ id: string; no
   return res.json();
 }
 
+export async function excluirEntregador(id: string, token: string): Promise<void> {
+  const res = await fetch(`${API_URL}/usuarios/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao excluir entregador');
+  }
+}
+
 export async function excluirEntrega(id: string, token: string): Promise<void> {
   const res = await fetch(`${API_URL}/entregas/${id}`, {
     method: 'DELETE',

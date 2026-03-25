@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, listarUsuarios, criarUsuario, type UsuarioResponse } from '@/lib/api';
+import { getToken, listarUsuarios, criarUsuario, excluirEntregador, type UsuarioResponse } from '@/lib/api';
 import { colors, fonts, radius, shadow } from '@/lib/brand';
 
 type EntregadorItem = UsuarioResponse & { criado_em?: string };
@@ -19,6 +19,7 @@ export default function EntregadoresPage() {
   const [salvando, setSalvando] = useState(false);
   const [erroForm, setErroForm] = useState('');
   const [sucesso, setSucesso] = useState('');
+  const [excluindo, setExcluindo] = useState<string | null>(null);
 
   async function carregar() {
     const token = getToken();
@@ -33,6 +34,19 @@ export default function EntregadoresPage() {
   }
 
   useEffect(() => { carregar(); }, []);
+
+  async function handleExcluir(id: string, nome: string) {
+    if (!confirm(`Excluir o entregador "${nome}"? Esta ação não pode ser desfeita.`)) return;
+    const token = getToken();
+    if (!token) return;
+    setExcluindo(id);
+    try {
+      await excluirEntregador(id, token);
+      setEntregadores((prev) => prev.filter((u) => u.id !== id));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao excluir');
+    } finally { setExcluindo(null); }
+  }
 
   function abrirModal() {
     setNome(''); setEmail(''); setSenha(''); setErroForm(''); setSucesso('');
@@ -82,6 +96,7 @@ export default function EntregadoresPage() {
                 <th style={s.th}>Nome</th>
                 <th style={s.th}>Email</th>
                 <th style={s.th}>Cadastrado em</th>
+                <th style={s.th}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -90,6 +105,15 @@ export default function EntregadoresPage() {
                   <td style={s.td}>{u.nome}</td>
                   <td style={s.td}>{u.email}</td>
                   <td style={s.td}>{u.criado_em ? new Date(u.criado_em).toLocaleDateString('pt-BR') : '-'}</td>
+                  <td style={s.td}>
+                    <button
+                      onClick={() => handleExcluir(u.id, u.nome)}
+                      disabled={excluindo === u.id}
+                      style={{ background: 'none', border: 'none', color: colors.error, fontSize: '0.875rem', cursor: 'pointer', padding: 0, fontFamily: fonts.body, opacity: excluindo === u.id ? 0.5 : 1 }}
+                    >
+                      {excluindo === u.id ? '…' : 'Excluir'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
