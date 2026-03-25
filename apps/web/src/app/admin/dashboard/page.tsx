@@ -6,11 +6,11 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { getToken, getDashboard, getClientesDashboard, type DashboardData } from '@/lib/api';
+import { getToken, getDashboard, getClientesDashboard, listarUsuarios, type DashboardData, type UsuarioResponse } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
 const CHART_COLORS = ['#4CAF50', '#42A5F5', '#FFA726', '#EF5350', '#AB47BC', '#26C6DA', '#FF7043', '#66BB6A', '#5C6BC0', '#EC407A'];
-
+const STATUS_LABELS: Record<string, string> = { ENVIADO: 'Entregue', PENDENTE: 'Pendente', ERRO: 'Erro' };
 const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtK = (v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(1)}k` : fmt(v);
 
@@ -20,8 +20,8 @@ export default function DashboardPage() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [clientes, setClientes] = useState<string[]>([]);
+  const [entregadores, setEntregadores] = useState<UsuarioResponse[]>([]);
 
-  // Filtros — padrão: mês atual
   const hoje = new Date();
   const primeiroDiaMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
   const ultimoDiaMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
@@ -30,51 +30,47 @@ export default function DashboardPage() {
   const [dataFim, setDataFim] = useState(ultimoDiaMes);
   const [filtroAtivo, setFiltroAtivo] = useState<'dia' | 'mes' | 'ano' | 'custom'>('mes');
   const [cliente, setCliente] = useState('');
+  const [entregadorId, setEntregadorId] = useState('');
 
   function aplicarPreset(preset: 'dia' | 'mes' | 'ano') {
     const now = new Date();
     setFiltroAtivo(preset);
-    if (preset === 'dia') {
-      const d = now.toISOString().slice(0, 10);
-      setDataInicio(d); setDataFim(d);
-    } else if (preset === 'mes') {
+    if (preset === 'dia') { const d = now.toISOString().slice(0, 10); setDataInicio(d); setDataFim(d); }
+    else if (preset === 'mes') {
       const ini = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
       const fim = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
       setDataInicio(ini); setDataFim(fim);
-    } else {
-      setDataInicio(`${now.getFullYear()}-01-01`);
-      setDataFim(`${now.getFullYear()}-12-31`);
-    }
+    } else { setDataInicio(`${now.getFullYear()}-01-01`); setDataFim(`${now.getFullYear()}-12-31`); }
   }
 
-  const carregar = useCallback((ini: string, fim: string, cli = cliente) => {
+  const carregar = useCallback((ini: string, fim: string, cli = cliente, entId = entregadorId) => {
     const token = getToken();
     if (!token) { router.replace('/login'); return; }
     setCarregando(true); setErro('');
-    getDashboard(token, { data_inicio: ini ? `${ini}T00:00:00` : undefined, data_fim: fim ? `${fim}T23:59:59` : undefined, cliente: cli || undefined })
-      .then(setData)
-      .catch((e) => setErro(e instanceof Error ? e.message : 'Erro'))
-      .finally(() => setCarregando(false));
-  }, [router, cliente]);
+    getDashboard(token, {
+      data_inicio: ini ? `${ini}T00:00:00` : undefined,
+      data_fim: fim ? `${fim}T23:59:59` : undefined,
+      cliente: cli || undefined,
+      entregador_id: entId || undefined,
+    }).then(setData).catch((e) => setErro(e instanceof Error ? e.message : 'Erro')).finally(() => setCarregando(false));
+  }, [router, cliente, entregadorId]);
 
   useEffect(() => {
     const token = getToken();
-    if (token) {
-      getClientesDashboard(token).then(setClientes).catch(() => {});
-    }
+    if (!token) return;
+    getClientesDashboard(token).then(setClientes).catch(() => {});
+    listarUsuarios(token).then(setEntregadores).catch(() => {});
     carregar(dataInicio, dataFim);
-  }, []);  // eslint-disable-line
+  }, []); // eslint-disable-line
 
   function handleFiltrar(e: React.FormEvent) {
-    e.preventDefault();
-    setFiltroAtivo('custom');
-    carregar(dataInicio, dataFim, cliente);
+    e.preventDefault(); setFiltroAtivo('custom');
+    carregar(dataInicio, dataFim, cliente, entregadorId);
   }
 
   function handleLimpar() {
-    setDataInicio(''); setDataFim(''); setCliente('');
-    setFiltroAtivo('custom');
-    carregar('', '', '');
+    setDataInicio(''); setDataFim(''); setCliente(''); setEntregadorId('');
+    setFiltroAtivo('custom'); carregar('', '', '', '');
   }
 
   if (carregando) return (
@@ -87,43 +83,41 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const { kpis } = data;
+  const statusNormalizado = data.entregasPorStatus.map((st) => ({ ...st, status: STATUS_LABELS[st.status] ?? st.status }));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <h1 style={s.titulo}>Dashboard</h1>
 
-      {/* Filtros de período */}
+      {/* Filtros */}
       <form onSubmit={handleFiltrar} style={s.filtroCard}>
         <div style={s.filtroPresets}>
           {(['dia', 'mes', 'ano'] as const).map((p) => (
-            <button key={p} type="button" onClick={() => { aplicarPreset(p); carregar(
-              p === 'dia' ? new Date().toISOString().slice(0, 10) :
-              p === 'mes' ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01` :
-              `${new Date().getFullYear()}-01-01`,
-              p === 'dia' ? new Date().toISOString().slice(0, 10) :
-              p === 'mes' ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()).padStart(2, '0')}` :
-              `${new Date().getFullYear()}-12-31`
-            ); }}
-              style={{ ...s.btnPreset, ...(filtroAtivo === p ? s.btnPresetAtivo : {}) }}>
+            <button key={p} type="button" onClick={() => {
+              aplicarPreset(p);
+              const now = new Date();
+              const ini = p === 'dia' ? now.toISOString().slice(0, 10) : p === 'mes' ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01` : `${now.getFullYear()}-01-01`;
+              const fim = p === 'dia' ? now.toISOString().slice(0, 10) : p === 'mes' ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}` : `${now.getFullYear()}-12-31`;
+              carregar(ini, fim, cliente, entregadorId);
+            }} style={{ ...s.btnPreset, ...(filtroAtivo === p ? s.btnPresetAtivo : {}) }}>
               {p === 'dia' ? 'Hoje' : p === 'mes' ? 'Este mês' : 'Este ano'}
             </button>
           ))}
-          <button type="button" onClick={handleLimpar} style={{ ...s.btnPreset, ...(filtroAtivo === 'custom' && !dataInicio && !dataFim ? s.btnPresetAtivo : {}) }}>
-            Todos
-          </button>
+          <button type="button" onClick={handleLimpar} style={{ ...s.btnPreset, ...(filtroAtivo === 'custom' && !dataInicio && !dataFim ? s.btnPresetAtivo : {}) }}>Todos</button>
         </div>
         <div style={s.filtroInputs}>
           <div style={s.filtroGrupo}>
             <label style={s.filtroLabel}>Cliente</label>
-            <select
-              value={cliente}
-              onChange={(e) => { setCliente(e.target.value); setFiltroAtivo('custom'); }}
-              style={{ ...s.filtroInput, minWidth: 220 }}
-            >
+            <select value={cliente} onChange={(e) => { setCliente(e.target.value); setFiltroAtivo('custom'); }} style={{ ...s.filtroInput, minWidth: 200 }}>
               <option value="">Todos os clientes</option>
-              {clientes.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={s.filtroGrupo}>
+            <label style={s.filtroLabel}>Entregador</label>
+            <select value={entregadorId} onChange={(e) => { setEntregadorId(e.target.value); setFiltroAtivo('custom'); }} style={{ ...s.filtroInput, minWidth: 160 }}>
+              <option value="">Todos</option>
+              {entregadores.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
             </select>
           </div>
           <div style={s.filtroGrupo}>
@@ -133,9 +127,8 @@ export default function DashboardPage() {
           <div style={s.filtroGrupo}>
             <label style={s.filtroLabel}>Até</label>
             <input type="date" value={dataFim} onChange={(e) => { setDataFim(e.target.value); setFiltroAtivo('custom'); }} style={s.filtroInput} />
-          </div>          <button type="submit" style={s.btnAplicar} disabled={carregando}>
-            {carregando ? '…' : 'Aplicar'}
-          </button>
+          </div>
+          <button type="submit" style={s.btnAplicar} disabled={carregando}>{carregando ? '…' : 'Aplicar'}</button>
         </div>
       </form>
 
@@ -149,33 +142,48 @@ export default function DashboardPage() {
         <KpiCard label="Tempo Médio Emissão→Entrega" value={`${kpis.tempoMedioHoras}h`} icon="⏱️" />
       </div>
 
-      {/* Linha 1: Entregas por período + Status */}
+      {/* DESTAQUE: Tempo Emissão → Entrega */}
+      <ChartCard title="⏱ Tempo Emissão → Entrega (horas)" destaque>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={data.tempoPorPeriodo}>
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+            <XAxis dataKey="data" tick={tickStyle} tickFormatter={(v) => v.slice(5)} />
+            <YAxis tick={tickStyle} unit="h" />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${Number(v)}h`, 'Horas']} />
+            <Line type="monotone" dataKey="horas" stroke="#AB47BC" strokeWidth={3} dot={{ r: 3, fill: '#AB47BC' }} name="Horas" />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
+
+      {/* Entregas por período (barras) + Status */}
       <div style={s.row2}>
         <ChartCard title="Entregas por Período" flex={2}>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data.entregasPorPeriodo}>
+            <BarChart data={data.entregasPorPeriodo}>
               <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
               <XAxis dataKey="data" tick={tickStyle} tickFormatter={(v) => v.slice(5)} />
               <YAxis tick={tickStyle} />
               <Tooltip contentStyle={tooltipStyle} />
-              <Line type="monotone" dataKey="count" stroke={colors.accent} strokeWidth={2} dot={false} name="Entregas" />
-            </LineChart>
+              <Bar dataKey="count" fill={colors.accent} name="Entregas" radius={[4, 4, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
         <ChartCard title="Status das Entregas" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
-              <Pie data={data.entregasPorStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
-                {data.entregasPorStatus.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+              <Pie data={statusNormalizado} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={75}
+                label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
+                labelLine={false}>
+                {statusNormalizado.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={{ fontSize: '0.75rem', color: colors.textSecondary, fontFamily: fonts.body }} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>
 
-      {/* Linha 2: Entregas por entregador + Valor por entregador */}
+      {/* Entregas por entregador + Valor por entregador */}
       <div style={s.row2}>
         <ChartCard title="Entregas por Entregador" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
@@ -188,7 +196,6 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
         <ChartCard title="Valor Movimentado por Entregador" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.valorPorEntregador} layout="vertical">
@@ -202,34 +209,20 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* Linha 3: Faturamento + Tempo emissão→entrega */}
-      <div style={s.row2}>
-        <ChartCard title="Faturamento ao Longo do Tempo" flex={2}>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data.faturamentoPorPeriodo}>
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-              <XAxis dataKey="data" tick={tickStyle} tickFormatter={(v) => v.slice(5)} />
-              <YAxis tick={tickStyle} tickFormatter={(v) => fmtK(v)} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
-              <Line type="monotone" dataKey="valor" stroke="#FFA726" strokeWidth={2} dot={false} name="Faturamento" />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
+      {/* Faturamento */}
+      <ChartCard title="Faturamento ao Longo do Tempo">
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={data.faturamentoPorPeriodo}>
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+            <XAxis dataKey="data" tick={tickStyle} tickFormatter={(v) => v.slice(5)} />
+            <YAxis tick={tickStyle} tickFormatter={(v) => fmtK(v)} />
+            <Tooltip contentStyle={tooltipStyle} formatter={(v) => fmt(Number(v))} />
+            <Line type="monotone" dataKey="valor" stroke="#FFA726" strokeWidth={2} dot={false} name="Faturamento" />
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartCard>
 
-        <ChartCard title="Tempo Emissão → Entrega (horas)" flex={1}>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data.tempoPorPeriodo}>
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-              <XAxis dataKey="data" tick={tickStyle} tickFormatter={(v) => v.slice(5)} />
-              <YAxis tick={tickStyle} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => `${Number(v)}h`} />
-              <Line type="monotone" dataKey="horas" stroke="#AB47BC" strokeWidth={2} dot={false} name="Horas" />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
-      </div>
-
-      {/* Linha 4: Distribuição de valores + Itens por nota */}
+      {/* Distribuição de valores + Itens por nota */}
       <div style={s.row2}>
         <ChartCard title="Distribuição de Valores das NF-e" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
@@ -242,7 +235,6 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
         <ChartCard title="Quantidade de Itens por Nota" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.itensPorNota}>
@@ -259,11 +251,7 @@ export default function DashboardPage() {
       {/* Composição de valores */}
       <ChartCard title="Composição dos Valores (Total)">
         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', padding: '0.5rem 0' }}>
-          {[
-            { label: 'Produtos', value: data.composicaoValores.produtos, color: colors.accent },
-            { label: 'Frete', value: data.composicaoValores.frete, color: '#FFA726' },
-            { label: 'Desconto', value: data.composicaoValores.desconto, color: '#EF5350' },
-          ].map((item) => (
+          {[{ label: 'Produtos', value: data.composicaoValores.produtos, color: colors.accent }, { label: 'Frete', value: data.composicaoValores.frete, color: '#FFA726' }, { label: 'Desconto', value: data.composicaoValores.desconto, color: '#EF5350' }].map((item) => (
             <div key={item.label} style={{ flex: 1, minWidth: 160, backgroundColor: colors.bgSecondary, borderRadius: radius.md, padding: '1rem 1.25rem', borderLeft: `3px solid ${item.color}` }}>
               <p style={{ margin: 0, fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{item.label}</p>
               <p style={{ margin: '0.25rem 0 0', fontSize: '1.25rem', fontWeight: 700, color: colors.textPrimary, fontFamily: fonts.title }}>{fmt(item.value)}</p>
@@ -285,7 +273,6 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
         <ChartCard title="Top 10 Destinatários" flex={1}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={data.topDestinatarios} layout="vertical">
@@ -312,7 +299,6 @@ export default function DashboardPage() {
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-
         <ChartCard title="Notas por UF — Destinatário" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data.notasPorUf.destinatario}>
@@ -326,7 +312,7 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* Natureza da operação */}
+      {/* Natureza da operação + Pontos de entrega */}
       <div style={s.row2}>
         <ChartCard title="Natureza da Operação" flex={1}>
           <ResponsiveContainer width="100%" height={220}>
@@ -339,33 +325,21 @@ export default function DashboardPage() {
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
-
-        {/* Mapa de entregas (pontos geo) */}
         <ChartCard title="Pontos de Entrega" flex={1}>
           {data.entregas.length === 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220, color: colors.textMuted, fontFamily: fonts.body, fontSize: '0.875rem' }}>
-              Nenhuma entrega com coordenadas
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220, color: colors.textMuted, fontFamily: fonts.body, fontSize: '0.875rem' }}>Nenhuma entrega com coordenadas</div>
           ) : (
             <div style={{ height: 220, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', fontFamily: fonts.body }}>
-                <thead>
-                  <tr>
-                    {['Destinatário', 'Valor', 'Lat', 'Lng'].map((h) => (
-                      <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: colors.textMuted, borderBottom: `1px solid ${colors.border}`, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>
-                    ))}
+                <thead><tr>{['Destinatário', 'Valor', 'Lat', 'Lng'].map((h) => <th key={h} style={{ padding: '6px 8px', textAlign: 'left', color: colors.textMuted, borderBottom: `1px solid ${colors.border}`, fontSize: '0.7rem', textTransform: 'uppercase' }}>{h}</th>)}</tr></thead>
+                <tbody>{data.entregas.slice(0, 50).map((e, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: '5px 8px', color: colors.textPrimary, borderBottom: `1px solid ${colors.border}` }}>{e.dest_nome || '—'}</td>
+                    <td style={{ padding: '5px 8px', color: colors.accent, borderBottom: `1px solid ${colors.border}` }}>{e.valor > 0 ? fmtK(e.valor) : '—'}</td>
+                    <td style={{ padding: '5px 8px', color: colors.textSecondary, borderBottom: `1px solid ${colors.border}`, fontFamily: 'monospace' }}>{e.lat.toFixed(4)}</td>
+                    <td style={{ padding: '5px 8px', color: colors.textSecondary, borderBottom: `1px solid ${colors.border}`, fontFamily: 'monospace' }}>{e.lng.toFixed(4)}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {data.entregas.slice(0, 50).map((e, i) => (
-                    <tr key={i}>
-                      <td style={{ padding: '5px 8px', color: colors.textPrimary, borderBottom: `1px solid ${colors.border}` }}>{e.dest_nome || '—'}</td>
-                      <td style={{ padding: '5px 8px', color: colors.accent, borderBottom: `1px solid ${colors.border}` }}>{e.valor > 0 ? fmtK(e.valor) : '—'}</td>
-                      <td style={{ padding: '5px 8px', color: colors.textSecondary, borderBottom: `1px solid ${colors.border}`, fontFamily: 'monospace' }}>{e.lat.toFixed(4)}</td>
-                      <td style={{ padding: '5px 8px', color: colors.textSecondary, borderBottom: `1px solid ${colors.border}`, fontFamily: 'monospace' }}>{e.lng.toFixed(4)}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                ))}</tbody>
               </table>
             </div>
           )}
@@ -387,10 +361,10 @@ function KpiCard({ label, value, icon }: { label: string; value: string; icon: s
   );
 }
 
-function ChartCard({ title, children, flex }: { title: string; children: React.ReactNode; flex?: number }) {
+function ChartCard({ title, children, flex, destaque }: { title: string; children: React.ReactNode; flex?: number; destaque?: boolean }) {
   return (
-    <div style={{ ...s.card, flex: flex ?? 1 }}>
-      <p style={s.chartTitle}>{title}</p>
+    <div style={{ ...s.card, flex: flex ?? 1, ...(destaque ? { border: '1px solid rgba(171,71,188,0.4)', boxShadow: '0 0 20px rgba(171,71,188,0.1)' } : {}) }}>
+      <p style={{ ...s.chartTitle, ...(destaque ? { color: '#AB47BC', fontSize: '0.875rem' } : {}) }}>{title}</p>
       {children}
     </div>
   );
@@ -412,8 +386,8 @@ const s: Record<string, React.CSSProperties> = {
   btnAplicar: { padding: '0.4rem 1rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.sm, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.title },
   kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' },
   kpiCard: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.875rem' },
-  row2: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap' },
+  row2: { display: 'flex', gap: '0.75rem', flexWrap: 'wrap' as const },
   card: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1.25rem', minWidth: 0 },
-  chartTitle: { margin: '0 0 1rem', fontSize: '0.8rem', fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.title, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  chartTitle: { margin: '0 0 1rem', fontSize: '0.8rem', fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.title, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
   spinner: { display: 'inline-block', width: 18, height: 18, border: `2px solid ${colors.border}`, borderTopColor: colors.accent, borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
 };
