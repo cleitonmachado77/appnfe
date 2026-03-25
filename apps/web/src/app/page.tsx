@@ -18,6 +18,8 @@ export default function Home() {
 
     if (perfil === 'ADMIN') {
       router.replace('/admin');
+    } else if (perfil === 'SUPER_ADMIN') {
+      router.replace('/super-admin');
     } else {
       router.replace('/entregador');
     }

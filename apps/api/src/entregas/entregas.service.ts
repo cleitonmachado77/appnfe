@@ -75,47 +75,36 @@ export class EntregasService {
     return entregaSalva;
   }
 
-  async listar(filtros: FiltrosEntregaDto): Promise<ListagemEntregasResponse> {
+  async listar(filtros: FiltrosEntregaDto, empresa_id?: string | null): Promise<ListagemEntregasResponse> {
     const page = filtros.page ?? 1;
     const limit = filtros.limit ?? 20;
 
     const qb = this.entregaRepository
       .createQueryBuilder('entrega')
-      .leftJoinAndSelect('entrega.entregador', 'entregador')
+      .innerJoinAndSelect('entrega.entregador', 'entregador')
       .leftJoinAndSelect('entrega.imagens', 'imagens');
 
+    // Isolamento por empresa
+    if (empresa_id) {
+      qb.andWhere('entregador.empresa_id = :empresa_id', { empresa_id });
+    }
+
     if (filtros.entregador_id) {
-      qb.andWhere('entrega.entregador_id = :entregadorId', {
-        entregadorId: filtros.entregador_id,
-      });
+      qb.andWhere('entrega.entregador_id = :entregadorId', { entregadorId: filtros.entregador_id });
     }
-
     if (filtros.data_inicio && filtros.data_fim) {
-      qb.andWhere('entrega.data_hora BETWEEN :dataInicio AND :dataFim', {
-        dataInicio: filtros.data_inicio,
-        dataFim: filtros.data_fim,
-      });
+      qb.andWhere('entrega.data_hora BETWEEN :dataInicio AND :dataFim', { dataInicio: filtros.data_inicio, dataFim: filtros.data_fim });
     } else if (filtros.data_inicio) {
-      qb.andWhere('entrega.data_hora >= :dataInicio', {
-        dataInicio: filtros.data_inicio,
-      });
+      qb.andWhere('entrega.data_hora >= :dataInicio', { dataInicio: filtros.data_inicio });
     } else if (filtros.data_fim) {
-      qb.andWhere('entrega.data_hora <= :dataFim', {
-        dataFim: filtros.data_fim,
-      });
+      qb.andWhere('entrega.data_hora <= :dataFim', { dataFim: filtros.data_fim });
     }
-
     if (filtros.chave_nfe) {
-      qb.andWhere('entrega.chave_nfe LIKE :chaveNfe', {
-        chaveNfe: `%${filtros.chave_nfe}%`,
-      });
+      qb.andWhere('entrega.chave_nfe LIKE :chaveNfe', { chaveNfe: `%${filtros.chave_nfe}%` });
     }
 
-    qb.orderBy('entrega.data_hora', 'DESC');
-    qb.skip((page - 1) * limit).take(limit);
-
+    qb.orderBy('entrega.data_hora', 'DESC').skip((page - 1) * limit).take(limit);
     const [data, total] = await qb.getManyAndCount();
-
     return { data, total, page, limit };
   }
 

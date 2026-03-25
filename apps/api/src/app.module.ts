@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Usuario, Entrega, Imagem, DadosNfe } from './entities';
+import { Usuario, Entrega, Imagem, DadosNfe, Empresa } from './entities';
 import { AuthModule } from './auth/auth.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { UploadModule } from './upload/upload.module';
 import { EntregasModule } from './entregas/entregas.module';
+
+import { SuperAdminModule } from './super-admin/super-admin.module';
 
 @Module({
   imports: [
@@ -19,7 +21,7 @@ import { EntregasModule } from './entregas/entregas.module';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [Usuario, Entrega, Imagem, DadosNfe],
+        entities: [Usuario, Entrega, Imagem, DadosNfe, Empresa],
         synchronize: false,
       }),
     }),
@@ -27,6 +29,7 @@ import { EntregasModule } from './entregas/entregas.module';
     UsuariosModule,
     UploadModule,
     EntregasModule,
+    SuperAdminModule,
   ],
 })
 export class AppModule {}

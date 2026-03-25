@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: JwtPayload): { userId: string; perfil: string } {
-    return { userId: payload.sub, perfil: payload.perfil };
+  validate(payload: JwtPayload): { userId: string; perfil: string; empresa_id: string | null } {
+    return { userId: payload.sub, perfil: payload.perfil, empresa_id: payload.empresa_id ?? null };
   }
 }

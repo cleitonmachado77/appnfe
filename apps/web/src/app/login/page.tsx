@@ -20,7 +20,13 @@ export default function LoginPage() {
     try {
       const data = await login(email, senha);
       setToken(data.token, data.perfil, data.nome);
-      router.push(data.perfil === 'ADMIN' ? '/admin' : '/entregador');
+      if (data.perfil === 'SUPER_ADMIN') {
+        router.push('/super-admin');
+      } else if (data.perfil === 'ADMIN') {
+        router.push('/admin');
+      } else {
+        router.push('/entregador');
+      }
     } catch (err: unknown) {
       setErro(err instanceof Error ? err.message : 'Erro ao fazer login');
     } finally {

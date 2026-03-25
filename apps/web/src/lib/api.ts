@@ -280,15 +280,119 @@ export interface DashboardData {
   entregas: { lat: number; lng: number; valor: number; dest_nome: string; chave_nfe: string }[];
 }
 
-export async function getDashboard(token: string, filtros?: { data_inicio?: string; data_fim?: string }): Promise<DashboardData> {
+export async function getClientesDashboard(token: string): Promise<string[]> {
+  const res = await fetch(`${API_URL}/dashboard/clientes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar clientes');
+  return res.json();
+}
+
+export async function getDashboard(token: string, filtros?: { data_inicio?: string; data_fim?: string; cliente?: string }): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (filtros?.data_inicio) params.set('data_inicio', filtros.data_inicio);
   if (filtros?.data_fim) params.set('data_fim', filtros.data_fim);
+  if (filtros?.cliente) params.set('cliente', filtros.cliente);
   const query = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${API_URL}/dashboard${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar dashboard');
+  return res.json();
+}
+
+// ---- Super Admin ----
+
+export interface EmpresaResponse {
+  id: string;
+  razao_social: string;
+  nome_fantasia: string | null;
+  cnpj: string;
+  inscricao_estadual: string | null;
+  segmento: string | null;
+  email_contato: string;
+  telefone: string | null;
+  celular: string | null;
+  site: string | null;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  responsavel_nome: string;
+  responsavel_email: string;
+  responsavel_telefone: string | null;
+  responsavel_cpf: string | null;
+  plano: string | null;
+  status: 'ATIVA' | 'INATIVA' | 'SUSPENSA';
+  observacoes: string | null;
+  criado_em: string;
+  totalUsuarios?: number;
+  totalEntregas?: number;
+}
+
+export interface StatsGlobais {
+  totalEmpresas: number;
+  totalAdmins: number;
+  totalEntregas: number;
+  valorMovimentado: number;
+  empresasPorStatus: { status: string; count: number }[];
+  entregasPorMes: { mes: string; count: number }[];
+}
+
+export async function cadastrarEmpresa(dto: Record<string, string>, token: string): Promise<{ empresa: EmpresaResponse }> {
+  const res = await fetch(`${API_URL}/super-admin/empresas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dto),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao cadastrar empresa');
+  }
+  return res.json();
+}
+
+export async function listarEmpresas(token: string): Promise<EmpresaResponse[]> {
+  const res = await fetch(`${API_URL}/super-admin/empresas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao listar empresas');
+  return res.json();
+}
+
+export async function buscarEmpresa(id: string, token: string): Promise<EmpresaResponse> {
+  const res = await fetch(`${API_URL}/super-admin/empresas/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Empresa não encontrada');
+  return res.json();
+}
+
+export async function atualizarStatusEmpresa(id: string, status: string, token: string): Promise<EmpresaResponse> {
+  const res = await fetch(`${API_URL}/super-admin/empresas/${id}/status?status=${status}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao atualizar status');
+  return res.json();
+}
+
+export async function getStatsGlobais(token: string): Promise<StatsGlobais> {
+  const res = await fetch(`${API_URL}/super-admin/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar stats');
+  return res.json();
+}
+
+export async function getMinhaContaInfo(token: string): Promise<{ id: string; nome: string; email: string; tipo: string; empresa_id: string | null; criado_em: string }> {
+  const res = await fetch(`${API_URL}/usuarios/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar conta');
   return res.json();
 }
 

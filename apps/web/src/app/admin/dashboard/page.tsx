@@ -6,7 +6,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
-import { getToken, getDashboard, type DashboardData } from '@/lib/api';
+import { getToken, getDashboard, getClientesDashboard, type DashboardData } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
 const CHART_COLORS = ['#4CAF50', '#42A5F5', '#FFA726', '#EF5350', '#AB47BC', '#26C6DA', '#FF7043', '#66BB6A', '#5C6BC0', '#EC407A'];
@@ -19,6 +19,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
+  const [clientes, setClientes] = useState<string[]>([]);
 
   // Filtros — padrão: mês atual
   const hoje = new Date();
@@ -28,6 +29,7 @@ export default function DashboardPage() {
   const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
   const [dataFim, setDataFim] = useState(ultimoDiaMes);
   const [filtroAtivo, setFiltroAtivo] = useState<'dia' | 'mes' | 'ano' | 'custom'>('mes');
+  const [cliente, setCliente] = useState('');
 
   function aplicarPreset(preset: 'dia' | 'mes' | 'ano') {
     const now = new Date();
@@ -45,28 +47,34 @@ export default function DashboardPage() {
     }
   }
 
-  const carregar = useCallback((ini: string, fim: string) => {
+  const carregar = useCallback((ini: string, fim: string, cli = cliente) => {
     const token = getToken();
     if (!token) { router.replace('/login'); return; }
     setCarregando(true); setErro('');
-    getDashboard(token, { data_inicio: ini ? `${ini}T00:00:00` : undefined, data_fim: fim ? `${fim}T23:59:59` : undefined })
+    getDashboard(token, { data_inicio: ini ? `${ini}T00:00:00` : undefined, data_fim: fim ? `${fim}T23:59:59` : undefined, cliente: cli || undefined })
       .then(setData)
       .catch((e) => setErro(e instanceof Error ? e.message : 'Erro'))
       .finally(() => setCarregando(false));
-  }, [router]);
+  }, [router, cliente]);
 
-  useEffect(() => { carregar(dataInicio, dataFim); }, []);  // eslint-disable-line
+  useEffect(() => {
+    const token = getToken();
+    if (token) {
+      getClientesDashboard(token).then(setClientes).catch(() => {});
+    }
+    carregar(dataInicio, dataFim);
+  }, []);  // eslint-disable-line
 
   function handleFiltrar(e: React.FormEvent) {
     e.preventDefault();
     setFiltroAtivo('custom');
-    carregar(dataInicio, dataFim);
+    carregar(dataInicio, dataFim, cliente);
   }
 
   function handleLimpar() {
-    setDataInicio(''); setDataFim('');
+    setDataInicio(''); setDataFim(''); setCliente('');
     setFiltroAtivo('custom');
-    carregar('', '');
+    carregar('', '', '');
   }
 
   if (carregando) return (
@@ -106,14 +114,26 @@ export default function DashboardPage() {
         </div>
         <div style={s.filtroInputs}>
           <div style={s.filtroGrupo}>
+            <label style={s.filtroLabel}>Cliente</label>
+            <select
+              value={cliente}
+              onChange={(e) => { setCliente(e.target.value); setFiltroAtivo('custom'); }}
+              style={{ ...s.filtroInput, minWidth: 220 }}
+            >
+              <option value="">Todos os clientes</option>
+              {clientes.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div style={s.filtroGrupo}>
             <label style={s.filtroLabel}>De</label>
             <input type="date" value={dataInicio} onChange={(e) => { setDataInicio(e.target.value); setFiltroAtivo('custom'); }} style={s.filtroInput} />
           </div>
           <div style={s.filtroGrupo}>
             <label style={s.filtroLabel}>Até</label>
             <input type="date" value={dataFim} onChange={(e) => { setDataFim(e.target.value); setFiltroAtivo('custom'); }} style={s.filtroInput} />
-          </div>
-          <button type="submit" style={s.btnAplicar} disabled={carregando}>
+          </div>          <button type="submit" style={s.btnAplicar} disabled={carregando}>
             {carregando ? '…' : 'Aplicar'}
           </button>
         </div>

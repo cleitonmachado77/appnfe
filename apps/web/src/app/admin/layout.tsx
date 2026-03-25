@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/admin/dashboard', label: 'Dashboard' },
   { href: '/admin/entregas', label: 'Entregas' },
   { href: '/admin/entregadores', label: 'Entregadores' },
+  { href: '/admin/minha-conta', label: 'Minha Conta' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

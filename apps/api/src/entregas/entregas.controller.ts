@@ -1,15 +1,6 @@
 import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-  Request,
-  UseGuards,
+  Body, Controller, Delete, Get, HttpCode, HttpStatus,
+  Param, Post, Query, Request, UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -27,15 +18,14 @@ export class EntregasController {
   @Roles('ENTREGADOR')
   @HttpCode(HttpStatus.CREATED)
   async criar(@Body() dto: CriarEntregaDto, @Request() req: any) {
-    const entregadorId: string = req.user.userId;
-    return this.entregasService.criar(dto, entregadorId);
+    return this.entregasService.criar(dto, req.user.userId);
   }
 
   @Get()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
-  async listar(@Query() filtros: FiltrosEntregaDto) {
-    return this.entregasService.listar(filtros);
+  async listar(@Query() filtros: FiltrosEntregaDto, @Request() req: any) {
+    return this.entregasService.listar(filtros, req.user.empresa_id);
   }
 
   @Get(':id')

@@ -4,12 +4,16 @@ import {
   Column,
   CreateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { Entrega } from './entrega.entity';
+import { Empresa } from './empresa.entity';
 
 export enum PerfilUsuario {
   ENTREGADOR = 'ENTREGADOR',
   ADMIN = 'ADMIN',
+  SUPER_ADMIN = 'SUPER_ADMIN',
 }
 
 @Entity('usuarios')
@@ -28,6 +32,13 @@ export class Usuario {
 
   @Column({ type: 'enum', enum: PerfilUsuario })
   tipo!: PerfilUsuario;
+
+  @Column({ type: 'uuid', nullable: true })
+  empresa_id!: string | null;
+
+  @ManyToOne(() => Empresa, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   criado_em!: Date;
