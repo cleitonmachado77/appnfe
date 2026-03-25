@@ -82,13 +82,12 @@ export class EntregasService {
     const qb = this.entregaRepository
       .createQueryBuilder('entrega')
       .innerJoinAndSelect('entrega.entregador', 'entregador')
-      .leftJoinAndSelect('entrega.imagens', 'imagens');
+      .leftJoinAndSelect('entrega.imagens', 'imagens')
+      .leftJoinAndSelect('entrega.dadosNfe', 'dadosNfe');
 
-    // Isolamento por empresa
     if (empresa_id) {
       qb.andWhere('entregador.empresa_id = :empresa_id', { empresa_id });
     }
-
     if (filtros.entregador_id) {
       qb.andWhere('entrega.entregador_id = :entregadorId', { entregadorId: filtros.entregador_id });
     }
@@ -103,13 +102,28 @@ export class EntregasService {
       qb.andWhere('entrega.chave_nfe LIKE :chaveNfe', { chaveNfe: `%${filtros.chave_nfe}%` });
     }
     if (filtros.cliente) {
-      qb.leftJoin('entrega.dadosNfe', 'nfe_cliente')
-        .andWhere('(LOWER(nfe_cliente.emit_nome) LIKE LOWER(:cliente) OR LOWER(nfe_cliente.dest_nome) LIKE LOWER(:cliente))', { cliente: `%${filtros.cliente}%` });
+      qb.andWhere('(LOWER(dadosNfe.emit_nome) LIKE LOWER(:cliente) OR LOWER(dadosNfe.dest_nome) LIKE LOWER(:cliente))', { cliente: `%${filtros.cliente}%` });
     }
 
     qb.orderBy('entrega.data_hora', 'DESC').skip((page - 1) * limit).take(limit);
-    const [data, total] = await qb.getManyAndCount();
-    return { data, total, page, limit };
+    const [rows, total] = await qb.getManyAndCount();
+
+    const data = rows.map((e) => ({
+      id: e.id,
+      chave_nfe: e.chave_nfe,
+      entregador_id: e.entregador_id,
+      entregador_nome: e.entregador?.nome ?? '',
+      data_hora: e.data_hora,
+      latitude: e.latitude,
+      longitude: e.longitude,
+      status: e.status,
+      criado_em: e.criado_em,
+      imagens: e.imagens ?? [],
+      danfe_pdf_base64: e.danfe_pdf_base64 ?? null,
+      dados_nfe: e.dadosNfe ?? null,
+    }));
+
+    return { data: data as any, total, page, limit };
   }
 
   async buscarPorId(id: string): Promise<EntregaDetalheResponse> {
