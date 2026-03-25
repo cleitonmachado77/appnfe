@@ -21,7 +21,7 @@ export class FiltrosEntregaDto {
 
   @IsOptional()
   @IsString()
-  cliente?: string;
+  cliente_cnpj?: string;
 
   @IsOptional()
   @Type(() => Number)

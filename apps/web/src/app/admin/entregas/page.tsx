@@ -12,7 +12,7 @@ export default function EntregasPage() {
   const router = useRouter();
   const [entregas, setEntregas] = useState<EntregaResponse[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioResponse[]>([]);
-  const [clientes, setClientes] = useState<string[]>([]);
+  const [clientes, setClientes] = useState<{ cnpj: string; nome: string }[]>([]);
   const [total, setTotal] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -20,7 +20,7 @@ export default function EntregasPage() {
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [chaveNfe, setChaveNfe] = useState('');
-  const [cliente, setCliente] = useState('');
+  const [cliente, setCliente] = useState(''); // armazena CNPJ
   const [page, setPage] = useState(1);
   const [excluindo, setExcluindo] = useState<string | null>(null);
   const LIMIT = 20;
@@ -47,7 +47,7 @@ export default function EntregasPage() {
   useEffect(() => { buscar({ page: 1, limit: LIMIT }); }, [buscar]);
 
   function getFiltrosAtivos(): FiltrosEntrega {
-    return { entregador_id: entregadorId || undefined, data_inicio: dataInicio || undefined, data_fim: dataFim || undefined, chave_nfe: chaveNfe || undefined, cliente: cliente || undefined };
+    return { entregador_id: entregadorId || undefined, data_inicio: dataInicio || undefined, data_fim: dataFim || undefined, chave_nfe: chaveNfe || undefined, cliente_cnpj: cliente || undefined };
   }
 
   function handleFiltrar(e: React.FormEvent) {
@@ -99,7 +99,7 @@ export default function EntregasPage() {
             <label style={s.label}>Cliente</label>
             <select value={cliente} onChange={(e) => setCliente(e.target.value)} style={s.input}>
               <option value="">Todos os clientes</option>
-              {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
+              {clientes.map((c) => <option key={c.cnpj} value={c.cnpj}>{c.nome}</option>)}
             </select>
           </div>
           <div style={s.campo}>

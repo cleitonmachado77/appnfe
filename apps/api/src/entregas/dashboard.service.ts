@@ -7,7 +7,7 @@ import { DadosNfe } from '../entities/dados-nfe.entity';
 export interface DashboardFiltros {
   data_inicio?: string;
   data_fim?: string;
-  cliente?: string;
+  cliente_cnpj?: string; // filtra por CNPJ do emitente ou destinatário
   empresa_id?: string | null;
   entregador_id?: string;
 }
@@ -21,21 +21,37 @@ export class DashboardService {
     private readonly dadosNfeRepo: Repository<DadosNfe>,
   ) {}
 
-  async getClientes(empresa_id?: string | null): Promise<string[]> {
-    const base = (alias: string) => {
+  async getClientes(empresa_id?: string | null): Promise<{ cnpj: string; nome: string }[]> {
+    const base = () => {
       const qb = this.dadosNfeRepo.createQueryBuilder('d').innerJoin('d.entrega', 'e').innerJoin('e.entregador', 'u');
       if (empresa_id) qb.where('u.empresa_id = :empresa_id', { empresa_id });
       return qb;
     };
+
     const [emitentes, destinatarios] = await Promise.all([
-      base('d').select('DISTINCT d.emit_nome', 'nome').andWhere('d.emit_nome IS NOT NULL').orderBy('d.emit_nome', 'ASC').getRawMany(),
-      base('d').select('DISTINCT d.dest_nome', 'nome').andWhere('d.dest_nome IS NOT NULL').orderBy('d.dest_nome', 'ASC').getRawMany(),
+      base()
+        .select('d.emit_cnpj', 'cnpj')
+        .addSelect('MIN(d.emit_nome)', 'nome')
+        .andWhere('d.emit_cnpj IS NOT NULL AND d.emit_nome IS NOT NULL')
+        .groupBy('d.emit_cnpj')
+        .getRawMany(),
+      base()
+        .select('d.dest_cnpj_cpf', 'cnpj')
+        .addSelect('MIN(d.dest_nome)', 'nome')
+        .andWhere('d.dest_cnpj_cpf IS NOT NULL AND d.dest_nome IS NOT NULL')
+        .groupBy('d.dest_cnpj_cpf')
+        .getRawMany(),
     ]);
-    const nomes = new Set<string>([
-      ...emitentes.map((r) => r.nome as string),
-      ...destinatarios.map((r) => r.nome as string),
-    ]);
-    return Array.from(nomes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+    // Unifica por CNPJ, preferindo o nome do emitente se houver conflito
+    const map = new Map<string, string>();
+    for (const r of [...destinatarios, ...emitentes]) {
+      map.set(r.cnpj, r.nome);
+    }
+
+    return Array.from(map.entries())
+      .map(([cnpj, nome]) => ({ cnpj, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
   async getDashboard(filtros: DashboardFiltros = {}) {
@@ -78,9 +94,9 @@ export class DashboardService {
     }
     if (filtros.data_inicio) qb.andWhere(`${alias}.data_hora >= :dataInicio`, { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere(`${alias}.data_hora <= :dataFim`, { dataFim: filtros.data_fim });
-    if (filtros.cliente) {
+    if (filtros.cliente_cnpj) {
       qb.innerJoin(`${alias}.dadosNfe`, '_nfe_cliente')
-        .andWhere(`(LOWER(_nfe_cliente.emit_nome) LIKE LOWER(:cliente) OR LOWER(_nfe_cliente.dest_nome) LIKE LOWER(:cliente))`, { cliente: `%${filtros.cliente}%` });
+        .andWhere(`(_nfe_cliente.emit_cnpj = :cnpj OR _nfe_cliente.dest_cnpj_cpf = :cnpj)`, { cnpj: filtros.cliente_cnpj });
     }
     return qb;
   }
@@ -94,8 +110,8 @@ export class DashboardService {
     }
     if (filtros.data_inicio) qb.andWhere(`${entregaAlias}.data_hora >= :dataInicio`, { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere(`${entregaAlias}.data_hora <= :dataFim`, { dataFim: filtros.data_fim });
-    if (filtros.cliente) {
-      qb.andWhere(`(LOWER(${nfeAlias}.emit_nome) LIKE LOWER(:cliente) OR LOWER(${nfeAlias}.dest_nome) LIKE LOWER(:cliente))`, { cliente: `%${filtros.cliente}%` });
+    if (filtros.cliente_cnpj) {
+      qb.andWhere(`(${nfeAlias}.emit_cnpj = :cnpj OR ${nfeAlias}.dest_cnpj_cpf = :cnpj)`, { cnpj: filtros.cliente_cnpj });
     }
     return qb;
   }

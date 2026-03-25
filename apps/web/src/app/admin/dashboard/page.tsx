@@ -19,7 +19,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
-  const [clientes, setClientes] = useState<string[]>([]);
+  const [clientes, setClientes] = useState<{ cnpj: string; nome: string }[]>([]);
   const [entregadores, setEntregadores] = useState<UsuarioResponse[]>([]);
 
   const hoje = new Date();
@@ -29,7 +29,7 @@ export default function DashboardPage() {
   const [dataInicio, setDataInicio] = useState(primeiroDiaMes);
   const [dataFim, setDataFim] = useState(ultimoDiaMes);
   const [filtroAtivo, setFiltroAtivo] = useState<'dia' | 'mes' | 'ano' | 'custom'>('mes');
-  const [cliente, setCliente] = useState('');
+  const [cliente, setCliente] = useState(''); // armazena o CNPJ
   const [entregadorId, setEntregadorId] = useState('');
 
   function aplicarPreset(preset: 'dia' | 'mes' | 'ano') {
@@ -50,7 +50,7 @@ export default function DashboardPage() {
     getDashboard(token, {
       data_inicio: ini ? `${ini}T00:00:00` : undefined,
       data_fim: fim ? `${fim}T23:59:59` : undefined,
-      cliente: cli || undefined,
+      cliente_cnpj: cli || undefined,
       entregador_id: entId || undefined,
     }).then(setData).catch((e) => setErro(e instanceof Error ? e.message : 'Erro')).finally(() => setCarregando(false));
   }, [router, cliente, entregadorId]);
@@ -110,7 +110,7 @@ export default function DashboardPage() {
             <label style={s.filtroLabel}>Cliente</label>
             <select value={cliente} onChange={(e) => { setCliente(e.target.value); setFiltroAtivo('custom'); }} style={{ ...s.filtroInput, minWidth: 200 }}>
               <option value="">Todos os clientes</option>
-              {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
+              {clientes.map((c) => <option key={c.cnpj} value={c.cnpj}>{c.nome}</option>)}
             </select>
           </div>
           <div style={s.filtroGrupo}>
