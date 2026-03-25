@@ -102,6 +102,10 @@ export class EntregasService {
     if (filtros.chave_nfe) {
       qb.andWhere('entrega.chave_nfe LIKE :chaveNfe', { chaveNfe: `%${filtros.chave_nfe}%` });
     }
+    if (filtros.cliente) {
+      qb.leftJoin('entrega.dadosNfe', 'nfe_cliente')
+        .andWhere('(LOWER(nfe_cliente.emit_nome) LIKE LOWER(:cliente) OR LOWER(nfe_cliente.dest_nome) LIKE LOWER(:cliente))', { cliente: `%${filtros.cliente}%` });
+    }
 
     qb.orderBy('entrega.data_hora', 'DESC').skip((page - 1) * limit).take(limit);
     const [data, total] = await qb.getManyAndCount();

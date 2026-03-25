@@ -24,11 +24,13 @@ export class DashboardController {
     @Query('data_inicio') dataInicio?: string,
     @Query('data_fim') dataFim?: string,
     @Query('cliente') cliente?: string,
+    @Query('entregador_id') entregadorId?: string,
   ) {
     return this.dashboardService.getDashboard({
       data_inicio: dataInicio,
       data_fim: dataFim,
       cliente,
+      entregador_id: entregadorId,
       empresa_id: req.user.empresa_id,
     });
   }

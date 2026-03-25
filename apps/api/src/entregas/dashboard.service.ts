@@ -9,6 +9,7 @@ export interface DashboardFiltros {
   data_fim?: string;
   cliente?: string;
   empresa_id?: string | null;
+  entregador_id?: string;
 }
 
 @Injectable()
@@ -68,10 +69,12 @@ export class DashboardService {
     };
   }
 
-  // Filtra entregas por empresa (via join entregador) + data + cliente
+  // Filtra entregas por empresa (via join entregador) + data + cliente + entregador
   private applyEntregaFilter(qb: any, filtros: DashboardFiltros, alias = 'e') {
-    if (filtros.empresa_id) {
-      qb.innerJoin(`${alias}.entregador`, '_u_tenant').andWhere('_u_tenant.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+    if (filtros.empresa_id || filtros.entregador_id) {
+      qb.innerJoin(`${alias}.entregador`, '_u_tenant');
+      if (filtros.empresa_id) qb.andWhere('_u_tenant.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+      if (filtros.entregador_id) qb.andWhere('_u_tenant.id = :entregador_id', { entregador_id: filtros.entregador_id });
     }
     if (filtros.data_inicio) qb.andWhere(`${alias}.data_hora >= :dataInicio`, { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere(`${alias}.data_hora <= :dataFim`, { dataFim: filtros.data_fim });
@@ -82,10 +85,12 @@ export class DashboardService {
     return qb;
   }
 
-  // Filtra dados_nfe por empresa (via join entrega>entregador) + data + cliente
+  // Filtra dados_nfe por empresa (via join entrega>entregador) + data + cliente + entregador
   private applyNfeFilter(qb: any, filtros: DashboardFiltros, entregaAlias = 'e', nfeAlias = 'd') {
-    if (filtros.empresa_id) {
-      qb.innerJoin(`${entregaAlias}.entregador`, '_u_tenant').andWhere('_u_tenant.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+    if (filtros.empresa_id || filtros.entregador_id) {
+      qb.innerJoin(`${entregaAlias}.entregador`, '_u_tenant');
+      if (filtros.empresa_id) qb.andWhere('_u_tenant.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+      if (filtros.entregador_id) qb.andWhere('_u_tenant.id = :entregador_id', { entregador_id: filtros.entregador_id });
     }
     if (filtros.data_inicio) qb.andWhere(`${entregaAlias}.data_hora >= :dataInicio`, { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere(`${entregaAlias}.data_hora <= :dataFim`, { dataFim: filtros.data_fim });
@@ -148,6 +153,7 @@ export class DashboardService {
       .select('u.nome', 'nome').addSelect('COUNT(*)', 'count').addSelect('SUM(CAST(d.valor_total AS DECIMAL))', 'valor')
       .groupBy('u.nome').orderBy('count', 'DESC');
     if (filtros.empresa_id) qb.andWhere('u.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+    if (filtros.entregador_id) qb.andWhere('u.id = :entregador_id', { entregador_id: filtros.entregador_id });
     if (filtros.data_inicio) qb.andWhere('e.data_hora >= :dataInicio', { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere('e.data_hora <= :dataFim', { dataFim: filtros.data_fim });
     return (await qb.getRawMany()).map((r) => ({ nome: r.nome, count: parseInt(r.count), valor: parseFloat(r.valor ?? '0') || 0 }));
@@ -244,6 +250,7 @@ export class DashboardService {
       .select('u.nome', 'nome').addSelect('SUM(d.valor_total)', 'valor').addSelect('COUNT(*)', 'count')
       .where('d.valor_total IS NOT NULL').groupBy('u.nome').orderBy('valor', 'DESC');
     if (filtros.empresa_id) qb.andWhere('u.empresa_id = :empresa_id', { empresa_id: filtros.empresa_id });
+    if (filtros.entregador_id) qb.andWhere('u.id = :entregador_id', { entregador_id: filtros.entregador_id });
     if (filtros.data_inicio) qb.andWhere('e.data_hora >= :dataInicio', { dataInicio: filtros.data_inicio });
     if (filtros.data_fim) qb.andWhere('e.data_hora <= :dataFim', { dataFim: filtros.data_fim });
     return (await qb.getRawMany()).map((r) => ({ nome: r.nome, valor: parseFloat(r.valor ?? '0') || 0, count: parseInt(r.count) }));

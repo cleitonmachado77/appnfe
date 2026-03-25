@@ -19,6 +19,10 @@ export class FiltrosEntregaDto {
   chave_nfe?: string;
 
   @IsOptional()
+  @IsString()
+  cliente?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

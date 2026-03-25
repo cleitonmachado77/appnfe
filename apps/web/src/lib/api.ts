@@ -143,6 +143,7 @@ export interface FiltrosEntrega {
   data_inicio?: string;
   data_fim?: string;
   chave_nfe?: string;
+  cliente?: string;
   page?: number;
   limit?: number;
 }
@@ -163,6 +164,7 @@ export async function listarEntregas(
   if (filtros.data_inicio) params.set('data_inicio', filtros.data_inicio);
   if (filtros.data_fim) params.set('data_fim', filtros.data_fim);
   if (filtros.chave_nfe) params.set('chave_nfe', filtros.chave_nfe);
+  if (filtros.cliente) params.set('cliente', filtros.cliente);
   if (filtros.page) params.set('page', String(filtros.page));
   if (filtros.limit) params.set('limit', String(filtros.limit));
 
@@ -288,11 +290,12 @@ export async function getClientesDashboard(token: string): Promise<string[]> {
   return res.json();
 }
 
-export async function getDashboard(token: string, filtros?: { data_inicio?: string; data_fim?: string; cliente?: string }): Promise<DashboardData> {
+export async function getDashboard(token: string, filtros?: { data_inicio?: string; data_fim?: string; cliente?: string; entregador_id?: string }): Promise<DashboardData> {
   const params = new URLSearchParams();
   if (filtros?.data_inicio) params.set('data_inicio', filtros.data_inicio);
   if (filtros?.data_fim) params.set('data_fim', filtros.data_fim);
   if (filtros?.cliente) params.set('cliente', filtros.cliente);
+  if (filtros?.entregador_id) params.set('entregador_id', filtros.entregador_id);
   const query = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${API_URL}/dashboard${query}`, {
     headers: { Authorization: `Bearer ${token}` },
