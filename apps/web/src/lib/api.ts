@@ -2,7 +2,7 @@ export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001
 
 export interface AuthResponse {
   token: string;
-  perfil: 'ENTREGADOR' | 'ADMIN';
+  perfil: 'ENTREGADOR' | 'ADMIN' | 'SUPER_ADMIN';
   nome: string;
 }
 
