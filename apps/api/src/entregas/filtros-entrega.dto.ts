@@ -4,7 +4,7 @@ import { Transform, Type } from 'class-transformer';
 export class FiltrosEntregaDto {
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)
-  @IsUUID()
+  @IsUUID('all')
   entregador_id?: string;
 
   @IsOptional()
