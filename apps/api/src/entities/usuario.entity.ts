@@ -36,6 +36,9 @@ export class Usuario {
   @Column({ type: 'uuid', nullable: true })
   empresa_id!: string | null;
 
+  @Column({ type: 'boolean', default: true })
+  ativo!: boolean;
+
   @ManyToOne(() => Empresa, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'empresa_id' })
   empresa!: Empresa | null;

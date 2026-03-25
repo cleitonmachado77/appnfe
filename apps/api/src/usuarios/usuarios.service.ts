@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -37,17 +37,20 @@ export class UsuariosService {
     return resultado;
   }
 
-  async excluir(id: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id };
-    if (empresa_id) where.empresa_id = empresa_id;
-    const usuario = await this.usuariosRepository.findOne({ where });
-    if (!usuario) throw new Error('Entregador não encontrado');
-    await this.usuariosRepository.delete(id);
-  }
-    const where: any = { tipo: PerfilUsuario.ENTREGADOR };
+  async listar(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
+    const where: any = { tipo: PerfilUsuario.ENTREGADOR, ativo: true };
     if (empresa_id) where.empresa_id = empresa_id;
 
     const usuarios = await this.usuariosRepository.find({ where, order: { criado_em: 'DESC' } });
     return usuarios.map(({ senha_hash: _, ...u }) => u);
+  }
+
+  // Soft delete: inativa o entregador preservando histórico de entregas
+  async excluir(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ENTREGADOR };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Entregador não encontrado');
+    await this.usuariosRepository.update(id, { ativo: false });
   }
 }

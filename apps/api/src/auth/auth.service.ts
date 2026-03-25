@@ -22,7 +22,7 @@ export class AuthService {
     const senhaValida =
       usuario != null && (await bcrypt.compare(dto.senha, usuario.senha_hash));
 
-    if (!usuario || !senhaValida) {
+    if (!usuario || !senhaValida || usuario.ativo === false) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
