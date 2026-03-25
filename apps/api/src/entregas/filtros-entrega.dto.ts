@@ -1,10 +1,10 @@
-import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 
 export class FiltrosEntregaDto {
   @IsOptional()
   @Transform(({ value }) => value === '' ? undefined : value)
-  @IsUUID('all')
+  @IsString()
   entregador_id?: string;
 
   @IsOptional()
