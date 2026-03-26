@@ -2,24 +2,25 @@ import {
   IsString,
   IsNumber,
   IsArray,
-  IsEnum,
   IsUrl,
+  IsOptional,
+  IsEnum,
   Min,
   Max,
   Matches,
-  ArrayMinSize,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { TipoImagem } from '../entities';
+import { StatusEntrega } from '../entities/entrega.entity';
 
 export class ImagemEntregaDto {
   @IsString()
   @IsUrl()
   url_arquivo!: string;
 
-  @IsEnum(TipoImagem)
-  tipo!: TipoImagem;
+  /** Chave do campo (ex: "CANHOTO", "LOCAL", "RECEITUARIO") */
+  @IsString()
+  tipo!: string;
 }
 
 export class CriarEntregaDto {
@@ -40,8 +41,30 @@ export class CriarEntregaDto {
   longitude!: number;
 
   @IsArray()
-  @ArrayMinSize(2)
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ImagemEntregaDto)
+  imagens?: ImagemEntregaDto[];
+
+  /** Se PENDENTE, salva como rascunho sem validar imagens obrigatórias */
+  @IsOptional()
+  @IsEnum(StatusEntrega)
+  status?: StatusEntrega;
+}
+
+export class FinalizarEntregaDto {
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ImagemEntregaDto)
   imagens!: ImagemEntregaDto[];
+
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
 }

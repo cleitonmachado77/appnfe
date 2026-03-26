@@ -45,6 +45,18 @@ export class Entrega {
   @Column({ type: 'enum', enum: StatusEntrega, default: StatusEntrega.ENVIADO })
   status!: StatusEntrega;
 
+  @Column({ type: 'char', length: 6, unique: true, nullable: true })
+  codigo!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  comentario_reativacao!: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  conferida!: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  conferida_em!: Date | null;
+
   @Column({ type: 'text', nullable: true })
   danfe_pdf_base64!: string | null;
 

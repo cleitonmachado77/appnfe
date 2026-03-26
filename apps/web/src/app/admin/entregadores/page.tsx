@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, listarUsuarios, criarUsuario, excluirEntregador, type UsuarioResponse } from '@/lib/api';
+import { getToken, listarUsuarios, criarUsuario, excluirEntregador, alterarSenhaEntregador, contarPendenciasEntregador, migrarEntregador, type UsuarioResponse } from '@/lib/api';
 import { colors, fonts, radius, shadow } from '@/lib/brand';
 
 type EntregadorItem = UsuarioResponse & { criado_em?: string };
@@ -20,6 +20,17 @@ export default function EntregadoresPage() {
   const [erroForm, setErroForm] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [excluindo, setExcluindo] = useState<string | null>(null);
+  const [modalSenha, setModalSenha] = useState<EntregadorItem | null>(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
+  const [erroSenha, setErroSenha] = useState('');
+  const [sucessoSenha, setSucessoSenha] = useState(false);
+  const [modalMigrar, setModalMigrar] = useState<EntregadorItem | null>(null);
+  const [pendencias, setPendencias] = useState<{ entregas_pendentes: number; transferencias_pendentes: number } | null>(null);
+  const [destinoId, setDestinoId] = useState('');
+  const [migrando, setMigrando] = useState(false);
+  const [erroMigrar, setErroMigrar] = useState('');
+  const [resultadoMigrar, setResultadoMigrar] = useState<{ entregas_migradas: number; transferencias_migradas: number } | null>(null);
 
   async function carregar() {
     const token = getToken();
@@ -51,6 +62,45 @@ export default function EntregadoresPage() {
   function abrirModal() {
     setNome(''); setEmail(''); setSenha(''); setErroForm(''); setSucesso('');
     setModalAberto(true);
+  }
+
+  function abrirModalSenha(u: EntregadorItem) {
+    setNovaSenha(''); setErroSenha(''); setSucessoSenha(false);
+    setModalSenha(u);
+  }
+
+  async function abrirModalMigrar(u: EntregadorItem) {
+    setDestinoId(''); setErroMigrar(''); setResultadoMigrar(null); setPendencias(null);
+    setModalMigrar(u);
+    const token = getToken(); if (!token) return;
+    try {
+      const p = await contarPendenciasEntregador(u.id, token);
+      setPendencias(p);
+    } catch { /* silencia */ }
+  }
+
+  async function handleMigrar(e: React.FormEvent) {
+    e.preventDefault();
+    const token = getToken(); if (!token) return;
+    setMigrando(true); setErroMigrar('');
+    try {
+      const resultado = await migrarEntregador(modalMigrar!.id, destinoId, token);
+      setResultadoMigrar(resultado);
+    } catch (err) {
+      setErroMigrar(err instanceof Error ? err.message : 'Erro ao migrar');
+    } finally { setMigrando(false); }
+  }
+
+  async function handleAlterarSenha(e: React.FormEvent) {
+    e.preventDefault();
+    const token = getToken(); if (!token) return;
+    setSalvandoSenha(true); setErroSenha('');
+    try {
+      await alterarSenhaEntregador(modalSenha!.id, novaSenha, token);
+      setSucessoSenha(true);
+    } catch (err) {
+      setErroSenha(err instanceof Error ? err.message : 'Erro ao alterar senha');
+    } finally { setSalvandoSenha(false); }
   }
 
   async function handleCriar(e: React.FormEvent) {
@@ -106,10 +156,12 @@ export default function EntregadoresPage() {
                   <td style={s.td}>{u.email}</td>
                   <td style={s.td}>{u.criado_em ? new Date(u.criado_em).toLocaleDateString('pt-BR') : '-'}</td>
                   <td style={s.td}>
+                    <button onClick={() => abrirModalSenha(u)} style={s.btnSenha}>Senha</button>
+                    <button onClick={() => abrirModalMigrar(u)} style={s.btnMigrar}>Migrar</button>
                     <button
                       onClick={() => handleExcluir(u.id, u.nome)}
                       disabled={excluindo === u.id}
-                      style={{ background: 'none', border: 'none', color: colors.error, fontSize: '0.875rem', cursor: 'pointer', padding: 0, fontFamily: fonts.body, opacity: excluindo === u.id ? 0.5 : 1 }}
+                      style={{ ...s.btnExcluir, opacity: excluindo === u.id ? 0.5 : 1 }}
                     >
                       {excluindo === u.id ? '…' : 'Excluir'}
                     </button>
@@ -161,6 +213,103 @@ export default function EntregadoresPage() {
           </div>
         </div>
       )}
+      {modalSenha && (
+        <div style={s.overlay} onClick={() => !salvandoSenha && setModalSenha(null)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.modalTitulo}>Alterar senha</h2>
+            <p style={s.modalDesc}>{modalSenha.nome}</p>
+            {sucessoSenha ? (
+              <div style={s.sucessoBox}>
+                <p style={{ margin: '0 0 12px', fontFamily: fonts.body }}>Senha alterada com sucesso.</p>
+                <button onClick={() => setModalSenha(null)} style={s.btnPrimario}>Fechar</button>
+              </div>
+            ) : (
+              <form onSubmit={handleAlterarSenha} style={s.form}>
+                <div style={s.campo}>
+                  <label style={s.label}>Nova senha (mínimo 8 caracteres)</label>
+                  <input
+                    type="password"
+                    value={novaSenha}
+                    onChange={(e) => setNovaSenha(e.target.value)}
+                    required
+                    minLength={8}
+                    placeholder="Nova senha..."
+                    style={s.input}
+                    disabled={salvandoSenha}
+                    autoFocus
+                  />
+                </div>
+                {erroSenha && <p style={s.erro}>{erroSenha}</p>}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button type="submit" disabled={salvandoSenha} style={salvandoSenha ? s.btnDisabled : s.btnPrimario}>
+                    {salvandoSenha ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  <button type="button" onClick={() => setModalSenha(null)} disabled={salvandoSenha} style={s.btnSecundario}>Cancelar</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+      {modalMigrar && (
+        <div style={s.overlay} onClick={() => !migrando && setModalMigrar(null)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.modalTitulo}>Migrar responsabilidades</h2>
+            <p style={s.modalDesc}>De: <strong>{modalMigrar.nome}</strong></p>
+
+            {resultadoMigrar ? (
+              <div style={s.sucessoBox}>
+                <p style={{ margin: '0 0 6px', fontFamily: fonts.body, fontWeight: 600 }}>Migração concluída</p>
+                <p style={{ margin: '0 0 4px', fontFamily: fonts.body, fontSize: '0.875rem' }}>
+                  {resultadoMigrar.entregas_migradas} entrega{resultadoMigrar.entregas_migradas !== 1 ? 's' : ''} pendente{resultadoMigrar.entregas_migradas !== 1 ? 's' : ''} transferida{resultadoMigrar.entregas_migradas !== 1 ? 's' : ''}
+                </p>
+                <p style={{ margin: '0 0 12px', fontFamily: fonts.body, fontSize: '0.875rem' }}>
+                  {resultadoMigrar.transferencias_migradas} transferência{resultadoMigrar.transferencias_migradas !== 1 ? 's' : ''} pendente{resultadoMigrar.transferencias_migradas !== 1 ? 's' : ''} migrada{resultadoMigrar.transferencias_migradas !== 1 ? 's' : ''}
+                </p>
+                <button onClick={() => setModalMigrar(null)} style={s.btnPrimario}>Fechar</button>
+              </div>
+            ) : (
+              <form onSubmit={handleMigrar} style={s.form}>
+                {pendencias && (
+                  <div style={s.infoBox}>
+                    <p style={{ margin: 0, fontSize: '0.8rem', fontFamily: fonts.body, color: colors.textSecondary }}>
+                      Pendências encontradas:
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.875rem', fontFamily: fonts.body, color: colors.textPrimary }}>
+                      {pendencias.entregas_pendentes} entrega{pendencias.entregas_pendentes !== 1 ? 's' : ''} pendente{pendencias.entregas_pendentes !== 1 ? 's' : ''} · {pendencias.transferencias_pendentes} transferência{pendencias.transferencias_pendentes !== 1 ? 's' : ''} ativa{pendencias.transferencias_pendentes !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                )}
+                <div style={s.campo}>
+                  <label style={s.label}>Transferir para</label>
+                  <select
+                    value={destinoId}
+                    onChange={(e) => setDestinoId(e.target.value)}
+                    required
+                    style={s.input}
+                    disabled={migrando}
+                  >
+                    <option value="">Selecione o entregador destino…</option>
+                    {entregadores.filter((u) => u.id !== modalMigrar.id).map((u) => (
+                      <option key={u.id} value={u.id}>{u.nome}</option>
+                    ))}
+                  </select>
+                </div>
+                {erroMigrar && <p style={s.erro}>{erroMigrar}</p>}
+                <p style={{ margin: 0, fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body }}>
+                  Entregas pendentes e transferências ativas serão atribuídas ao entregador selecionado.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button type="submit" disabled={!destinoId || migrando} style={!destinoId || migrando ? s.btnDisabled : s.btnPrimario}>
+                    {migrando ? 'Migrando...' : 'Confirmar migração'}
+                  </button>
+                  <button type="button" onClick={() => setModalMigrar(null)} disabled={migrando} style={s.btnSecundario}>Cancelar</button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -178,6 +327,9 @@ const s: Record<string, React.CSSProperties> = {
   btnPrimario: { padding: '0.5rem 1.25rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.md, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.title },
   btnSecundario: { padding: '0.5rem 1.25rem', backgroundColor: 'transparent', color: colors.textSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.md, fontSize: '0.875rem', cursor: 'pointer', fontFamily: fonts.body },
   btnDisabled: { padding: '0.5rem 1.25rem', backgroundColor: colors.textMuted, color: 'rgba(255,255,255,0.4)', border: 'none', borderRadius: radius.md, fontSize: '0.875rem', cursor: 'not-allowed', fontFamily: fonts.body },
+  btnSenha: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.accentBorder}`, backgroundColor: colors.accentLight, color: colors.accent },
+  btnMigrar: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.warningBorder}`, backgroundColor: colors.warningBg, color: colors.warning, marginLeft: '0.5rem' },
+  btnExcluir: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.errorBorder}`, backgroundColor: colors.errorBg, color: colors.error, marginLeft: '0.5rem' },
   overlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { backgroundColor: colors.bgCard, borderRadius: radius.xl, padding: '1.75rem', width: '100%', maxWidth: '440px', boxShadow: shadow.modal, border: `1px solid ${colors.border}` },
   modalTitulo: { fontSize: '1.125rem', fontWeight: 700, color: colors.textPrimary, margin: '0 0 0.25rem', fontFamily: fonts.title },
@@ -187,4 +339,5 @@ const s: Record<string, React.CSSProperties> = {
   label: { fontSize: '0.75rem', fontWeight: 500, color: colors.textSecondary, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' },
   input: { padding: '0.625rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, fontSize: '0.875rem', outline: 'none', backgroundColor: colors.bgSecondary, color: colors.textPrimary, fontFamily: fonts.body },
   sucessoBox: { padding: '1rem', backgroundColor: colors.successBg, border: `1px solid ${colors.successBorder}`, borderRadius: radius.md, color: colors.success, fontSize: '0.875rem' },
+  infoBox: { padding: '0.75rem 1rem', backgroundColor: colors.bgSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.md },
 };

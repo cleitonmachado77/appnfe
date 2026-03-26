@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { getToken, buscarEntrega, reprocessarDanfe, type EntregaResponse } from '@/lib/api';
+import { getToken, buscarEntrega, reprocessarDanfe, reativarEntrega, excluirImagemEntrega, limparCamposEntrega, conferirEntrega, type EntregaResponse } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
 export default function DetalheEntregaPage() {
@@ -14,6 +14,59 @@ export default function DetalheEntregaPage() {
   const [erro, setErro] = useState('');
   const [imagemAmpliada, setImagemAmpliada] = useState<string | null>(null);
   const [reprocessando, setReprocessando] = useState(false);
+  const [reativando, setReativando] = useState(false);
+  const [modalReativar, setModalReativar] = useState(false);
+  const [comentarioReativar, setComentarioReativar] = useState('');
+  const [excluindoImagem, setExcluindoImagem] = useState<string | null>(null);
+  // rastreia o que foi excluído para liberar o botão Reativar
+  const [camposLimpos, setCamposLimpos] = useState<{ chave_nfe: boolean; localizacao: boolean; imagem: boolean }>({
+    chave_nfe: false, localizacao: false, imagem: false,
+  });
+  const [limpando, setLimpando] = useState<string | null>(null);
+  const [conferindo, setConferindo] = useState(false);
+
+  async function handleConferir() {
+    const token = getToken(); if (!token) return;
+    setConferindo(true);
+    try {
+      const novoValor = !entrega?.conferida;
+      await conferirEntrega(id, novoValor, token);
+      setEntrega((prev) => prev ? { ...prev, conferida: novoValor, conferida_em: novoValor ? new Date().toISOString() : null } : prev);
+    } finally { setConferindo(false); }
+  }
+
+  const podeReativar = entrega?.status !== 'PENDENTE' &&
+    (camposLimpos.chave_nfe || camposLimpos.localizacao || camposLimpos.imagem);
+
+  async function handleLimparCampo(campo: 'chave_nfe' | 'localizacao') {
+    if (!confirm(`Limpar ${campo === 'chave_nfe' ? 'a Chave NF-e' : 'a localização'}? O entregador precisará preencher novamente.`)) return;
+    const token = getToken(); if (!token) return;
+    setLimpando(campo);
+    try {
+      await limparCamposEntrega(id, { [campo]: true }, token);
+      if (campo === 'chave_nfe') {
+        setEntrega((prev) => prev ? { ...prev, chave_nfe: '' } : prev);
+      } else {
+        setEntrega((prev) => prev ? { ...prev, latitude: 0, longitude: 0 } : prev);
+      }
+      setCamposLimpos((prev) => ({ ...prev, [campo]: true }));
+    } finally {
+      setLimpando(null);
+    }
+  }
+
+  async function handleExcluirImagem(imagemId: string) {
+    if (!confirm('Excluir esta imagem? Esta ação não pode ser desfeita.')) return;
+    const token = getToken(); if (!token) return;
+    setExcluindoImagem(imagemId);
+    try {
+      await excluirImagemEntrega(imagemId, token);
+      setEntrega((prev) => prev ? { ...prev, imagens: prev.imagens.filter((i) => i.id !== imagemId) } : prev);
+      setCamposLimpos((prev) => ({ ...prev, imagem: true }));
+    } finally {
+      setExcluindoImagem(null);
+    }
+  }
 
   useEffect(() => {
     const token = getToken();
@@ -33,8 +86,8 @@ export default function DetalheEntregaPage() {
   if (erro) return <p style={{ color: colors.error, fontFamily: fonts.body }}>{erro}</p>;
   if (!entrega) return null;
 
-  const canhoto = entrega.imagens.find((i) => i.tipo === 'CANHOTO');
-  const local = entrega.imagens.find((i) => i.tipo === 'LOCAL');
+  const canhoto = entrega.imagens.find((i) => (i.campo_key ?? i.tipo) === 'CANHOTO');
+  const local = entrega.imagens.find((i) => (i.campo_key ?? i.tipo) === 'LOCAL');
 
   async function handleReprocessarDanfe() {
     const token = getToken();
@@ -50,6 +103,19 @@ export default function DetalheEntregaPage() {
     }
   }
 
+  async function handleReativar() {
+    const token = getToken(); if (!token) return;
+    setReativando(true);
+    try {
+      await reativarEntrega(id, comentarioReativar || undefined, token);
+      setEntrega((prev) => prev ? { ...prev, status: 'PENDENTE' } : prev);
+      setModalReativar(false);
+      setComentarioReativar('');
+    } finally {
+      setReativando(false);
+    }
+  }
+
   return (
     <div>
       <div style={s.cabecalho}>
@@ -58,13 +124,58 @@ export default function DetalheEntregaPage() {
       </div>
 
       <div style={s.card}>
-        <h2 style={s.secaoTitulo}>Informações</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+          <h2 style={{ ...s.secaoTitulo, margin: 0 }}>Informações</h2>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              onClick={handleConferir}
+              disabled={conferindo || entrega.status === 'PENDENTE'}
+              style={{
+                padding: '0.375rem 0.875rem',
+                backgroundColor: entrega.conferida ? colors.successBg : colors.bgSecondary,
+                color: entrega.conferida ? colors.success : colors.textSecondary,
+                border: `1px solid ${entrega.conferida ? colors.successBorder : colors.border}`,
+                borderRadius: radius.md, fontSize: '0.8rem', fontWeight: 600,
+                cursor: entrega.status === 'PENDENTE' ? 'not-allowed' : 'pointer',
+                opacity: conferindo ? 0.6 : 1, fontFamily: fonts.body,
+              }}
+              title={entrega.status === 'PENDENTE' ? 'Não é possível conferir uma entrega pendente' : ''}
+            >
+              {entrega.conferida ? '✓ Conferida' : '○ Conferir'}
+            </button>
+            {podeReativar && (
+              <button onClick={() => setModalReativar(true)} style={s.btnReativar}>
+                ↺ Reativar entrega
+              </button>
+            )}
+          </div>
+        </div>
         <div style={s.grid}>
-          <Campo label="Chave NF-e" valor={entrega.chave_nfe} mono />
+          <Campo label="Código" valor={entrega.codigo ?? '—'} mono />
+          <CampoExcluivel
+            label="Chave NF-e"
+            valor={entrega.chave_nfe || '—'}
+            mono
+            excluido={camposLimpos.chave_nfe}
+            excluindo={limpando === 'chave_nfe'}
+            onExcluir={() => handleLimparCampo('chave_nfe')}
+            podeExcluir={entrega.status !== 'PENDENTE' && !!entrega.chave_nfe && !camposLimpos.chave_nfe}
+          />
           <Campo label="Entregador" valor={entrega.entregador_nome} />
           <Campo label="Data/Hora" valor={new Date(entrega.data_hora).toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'medium' })} />
           <Campo label="Status" valor={entrega.status} />
-          <Campo label="Latitude" valor={Number(entrega.latitude).toFixed(6)} mono />
+          {entrega.conferida && entrega.conferida_em && (
+            <Campo label="Conferida em" valor={new Date(entrega.conferida_em).toLocaleString('pt-BR')} />
+          )}
+          <CampoExcluivel
+            label="Latitude"
+            valor={Number(entrega.latitude).toFixed(6)}
+            mono
+            excluido={camposLimpos.localizacao}
+            excluindo={limpando === 'localizacao'}
+            onExcluir={() => handleLimparCampo('localizacao')}
+            podeExcluir={entrega.status !== 'PENDENTE' && (Number(entrega.latitude) !== 0 || Number(entrega.longitude) !== 0) && !camposLimpos.localizacao}
+          />
           <Campo label="Longitude" valor={Number(entrega.longitude).toFixed(6)} mono />
         </div>
       </div>
@@ -131,8 +242,20 @@ export default function DetalheEntregaPage() {
           </div>
         ) : (
           <div style={s.imagensGrid}>
-            {canhoto && <ImagemCard titulo="Canhoto" url={canhoto.url_arquivo} onClick={() => setImagemAmpliada(canhoto.url_arquivo)} />}
-            {local && <ImagemCard titulo="Local de Entrega" url={local.url_arquivo} onClick={() => setImagemAmpliada(local.url_arquivo)} />}
+            {entrega.imagens.map((img) => {
+              const key = img.campo_key ?? img.tipo ?? '';
+              const titulo = key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ');
+              return (
+                <ImagemCard
+                  key={img.id}
+                  titulo={titulo}
+                  url={img.url_arquivo}
+                  excluindo={excluindoImagem === img.id}
+                  onExcluir={() => handleExcluirImagem(img.id)}
+                  onClick={() => setImagemAmpliada(img.url_arquivo)}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -173,11 +296,64 @@ export default function DetalheEntregaPage() {
         )}
       </div>
 
-      {imagemAmpliada && (
-        <div style={s.overlay} onClick={() => setImagemAmpliada(null)}>
+      {modalReativar && (
+        <div style={s.overlay} onClick={() => !reativando && setModalReativar(false)}>
+          <div style={{ ...s.overlayContent, backgroundColor: colors.bgCard, borderRadius: radius.xl, padding: '1.75rem', maxWidth: 440, width: '90vw', maxHeight: 'unset' }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 0.25rem', fontSize: '1.1rem', fontWeight: 700, color: colors.textPrimary, fontFamily: fonts.title }}>Reativar entrega</h2>
+            <p style={{ margin: '0 0 1.25rem', fontSize: '0.875rem', color: colors.textSecondary, fontFamily: fonts.body }}>
+              A entrega voltará para o entregador com status Pendente.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Comentário para o entregador (opcional)
+              </label>
+              <textarea
+                value={comentarioReativar}
+                onChange={(e) => setComentarioReativar(e.target.value)}
+                placeholder="Ex: Assinatura do canhoto ilegível, refazer a entrega…"
+                rows={3}
+                style={{ padding: '0.5rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, fontSize: '0.875rem', backgroundColor: colors.bgSecondary, color: colors.textPrimary, fontFamily: fonts.body, outline: 'none', resize: 'vertical' as const }}
+                disabled={reativando}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={handleReativar}
+                disabled={reativando}
+                style={{ padding: '0.5rem 1.25rem', backgroundColor: colors.warning, color: '#fff', border: 'none', borderRadius: radius.md, fontSize: '0.875rem', fontWeight: 600, cursor: reativando ? 'not-allowed' : 'pointer', opacity: reativando ? 0.6 : 1, fontFamily: fonts.title }}
+              >
+                {reativando ? 'Reativando…' : 'Confirmar'}
+              </button>
+              <button onClick={() => setModalReativar(false)} disabled={reativando} style={s.btnVoltar}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {imagemAmpliada && (        <div style={s.overlay} onClick={() => setImagemAmpliada(null)}>
           <div style={s.overlayContent} onClick={(e) => e.stopPropagation()}>
             <button style={s.btnFechar} onClick={() => setImagemAmpliada(null)}>✕</button>
             <img src={imagemAmpliada} alt="Imagem ampliada" style={s.imagemAmpliada} />
+            <button
+              style={s.btnSalvarImg}
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const res = await fetch(imagemAmpliada);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `imagem-entrega.${blob.type.split('/')[1] || 'jpg'}`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  window.open(imagemAmpliada, '_blank');
+                }
+              }}
+            >
+              ⬇ Salvar imagem
+            </button>
           </div>
         </div>
       )}
@@ -194,10 +370,54 @@ function Campo({ label, valor, mono }: { label: string; valor: string; mono?: bo
   );
 }
 
-function ImagemCard({ titulo, url, onClick }: { titulo: string; url: string; onClick: () => void }) {
+function CampoExcluivel({ label, valor, mono, excluido, excluindo, onExcluir, podeExcluir }: {
+  label: string; valor: string; mono?: boolean;
+  excluido: boolean; excluindo: boolean; onExcluir: () => void; podeExcluir: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: fonts.body }}>{label}</span>
+        {podeExcluir && (
+          <button
+            onClick={onExcluir}
+            disabled={excluindo}
+            style={{ background: 'none', border: 'none', cursor: excluindo ? 'not-allowed' : 'pointer', fontSize: '0.7rem', color: colors.error, opacity: excluindo ? 0.5 : 0.7, padding: '1px 4px', fontFamily: fonts.body }}
+          >
+            {excluindo ? '…' : '🗑 limpar'}
+          </button>
+        )}
+      </div>
+      <span style={{
+        fontSize: '0.9rem',
+        color: excluido ? colors.textMuted : colors.textPrimary,
+        fontFamily: mono ? 'monospace' : fonts.body,
+        wordBreak: 'break-all',
+        textDecoration: excluido ? 'line-through' : 'none',
+      }}>
+        {excluido ? 'Removido' : valor}
+      </span>
+    </div>
+  );
+}
+
+function ImagemCard({ titulo, url, onClick, onExcluir, excluindo }: {
+  titulo: string; url: string; onClick: () => void;
+  onExcluir: () => void; excluindo?: boolean;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <span style={{ fontSize: '0.875rem', fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body }}>{titulo}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '0.875rem', fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body }}>{titulo}</span>
+        <button
+          onClick={onExcluir}
+          disabled={excluindo}
+          title="Excluir imagem"
+          style={{ background: 'none', border: 'none', cursor: excluindo ? 'not-allowed' : 'pointer', fontSize: '0.75rem', color: colors.error, opacity: excluindo ? 0.5 : 0.7, padding: '2px 6px', fontFamily: fonts.body }}
+        >
+          {excluindo ? '…' : '🗑 excluir'}
+        </button>
+      </div>
       <img src={url} alt={titulo} onClick={onClick} style={{ width: '100%', maxHeight: '240px', objectFit: 'cover', borderRadius: radius.md, border: `1px solid ${colors.border}`, cursor: 'zoom-in' }} />
       <span style={{ fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body }}>Clique para ampliar</span>
     </div>
@@ -218,4 +438,6 @@ const s: Record<string, React.CSSProperties> = {
   overlayContent: { position: 'relative', maxWidth: '90vw', maxHeight: '90vh' },
   btnFechar: { position: 'absolute', top: '-2rem', right: 0, background: 'none', border: 'none', color: '#fff', fontSize: '1.25rem', cursor: 'pointer', padding: '0.25rem 0.5rem' },
   imagemAmpliada: { maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: radius.md },
+  btnSalvarImg: { display: 'block', marginTop: '0.75rem', textAlign: 'center', fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', fontFamily: fonts.body, padding: '0.375rem 0.75rem', border: '1px solid rgba(255,255,255,0.2)', borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.05)', cursor: 'pointer', width: '100%' },
+  btnReativar: { padding: '0.375rem 0.875rem', backgroundColor: colors.warningBg, color: colors.warning, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body },
 };

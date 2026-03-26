@@ -7,6 +7,7 @@ import { Usuario, PerfilUsuario } from '../entities/usuario.entity';
 import { Entrega } from '../entities/entrega.entity';
 import { DadosNfe } from '../entities/dados-nfe.entity';
 import { CadastrarEmpresaDto } from './cadastrar-empresa.dto';
+import { CamposImagemService } from '../campos-imagem/campos-imagem.service';
 
 @Injectable()
 export class SuperAdminService {
@@ -15,6 +16,7 @@ export class SuperAdminService {
     @InjectRepository(Usuario) private readonly usuarioRepo: Repository<Usuario>,
     @InjectRepository(Entrega) private readonly entregaRepo: Repository<Entrega>,
     @InjectRepository(DadosNfe) private readonly nfeRepo: Repository<DadosNfe>,
+    private readonly camposImagemService: CamposImagemService,
   ) {}
 
   async cadastrarEmpresa(dto: CadastrarEmpresaDto) {
@@ -61,6 +63,8 @@ export class SuperAdminService {
     });
     const adminSalvo = await this.usuarioRepo.save(admin);
     const { senha_hash: _, ...adminSemSenha } = adminSalvo;
+
+    await this.camposImagemService.inicializarPadrao(empresaSalva.id);
 
     return { empresa: empresaSalva, admin: adminSemSenha };
   }

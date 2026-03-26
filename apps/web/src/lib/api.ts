@@ -1,5 +1,17 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+/** Wrapper de fetch que trata 401 globalmente — limpa token e redireciona para login */
+async function apiFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401 && typeof window !== 'undefined') {
+    localStorage.removeItem('token');
+    localStorage.removeItem('perfil');
+    localStorage.removeItem('nome');
+    window.location.href = '/login';
+  }
+  return res;
+}
+
 export interface AuthResponse {
   token: string;
   perfil: 'ENTREGADOR' | 'ADMIN' | 'SUPER_ADMIN';
@@ -7,7 +19,7 @@ export interface AuthResponse {
 }
 
 export async function login(email: string, senha: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_URL}/auth/login`, {
+  const res = await apiFetch(`${API_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, senha }),
@@ -52,7 +64,7 @@ export async function uploadImagem(
   const form = new FormData();
   form.append('file', file);
 
-  const res = await fetch(`${API_URL}/upload`, {
+  const res = await apiFetch(`${API_URL}/upload`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -70,7 +82,7 @@ export async function uploadImagem(
 
 export interface ImagemEntregaDto {
   url_arquivo: string;
-  tipo: 'CANHOTO' | 'LOCAL';
+  tipo: string;
 }
 
 export interface CriarEntregaDto {
@@ -78,6 +90,7 @@ export interface CriarEntregaDto {
   latitude: number;
   longitude: number;
   imagens: ImagemEntregaDto[];
+  status?: 'PENDENTE' | 'ENVIADO';
 }
 
 export interface DadosNfe {
@@ -103,6 +116,7 @@ export interface DadosNfe {
 
 export interface EntregaResponse {
   id: string;
+  codigo: string | null;
   chave_nfe: string;
   entregador_id: string;
   entregador_nome: string;
@@ -110,16 +124,31 @@ export interface EntregaResponse {
   latitude: number;
   longitude: number;
   status: 'ENVIADO' | 'PENDENTE' | 'ERRO';
-  imagens: { id: string; tipo: 'CANHOTO' | 'LOCAL'; url_arquivo: string }[];
+  conferida: boolean;
+  conferida_em?: string | null;
+  imagens: { id: string; tipo: string | null; campo_key?: string | null; url_arquivo: string }[];
   danfe_pdf_base64?: string | null;
   dados_nfe?: DadosNfe | null;
+  comentario_reativacao?: string | null;
+}
+
+export async function conferirEntrega(id: string, conferida: boolean, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/conferir`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ conferida }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao conferir entrega');
+  }
 }
 
 export async function criarEntrega(
   dados: CriarEntregaDto,
   token: string,
 ): Promise<EntregaResponse> {
-  const res = await fetch(`${API_URL}/entregas`, {
+  const res = await apiFetch(`${API_URL}/entregas`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -134,6 +163,112 @@ export async function criarEntrega(
   }
 
   return res.json();
+}
+
+export async function listarMinhasPendentes(token: string): Promise<EntregaResponse[]> {
+  const res = await apiFetch(`${API_URL}/entregas/minhas-pendentes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar pendentes');
+  return res.json();
+}
+
+export async function finalizarEntrega(
+  id: string,
+  dados: { imagens: ImagemEntregaDto[]; latitude: number; longitude: number },
+  token: string,
+): Promise<EntregaResponse> {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/finalizar`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dados),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao finalizar entrega');
+  }
+  return res.json();
+}
+
+export async function excluirEntregaPendente(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/pendente`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao excluir entrega');
+  }
+}
+
+// ---- Transferências ----
+
+export interface ColегaResponse { id: string; nome: string; }
+
+export interface TransferenciaResponse {
+  id: string;
+  entrega_id: string;
+  remetente_id: string;
+  destinatario_id: string;
+  status: 'PENDENTE' | 'ACEITA' | 'RECUSADA';
+  mensagem: string | null;
+  criado_em: string;
+  entrega?: EntregaResponse;
+  remetente?: { id: string; nome: string };
+  destinatario?: { id: string; nome: string };
+}
+
+export async function listarColegas(token: string): Promise<{ id: string; nome: string }[]> {
+  const res = await apiFetch(`${API_URL}/transferencias/colegas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar colegas');
+  return res.json();
+}
+
+export async function solicitarTransferencia(
+  entregaId: string,
+  destinatarioId: string,
+  mensagem: string | undefined,
+  token: string,
+): Promise<TransferenciaResponse> {
+  const res = await apiFetch(`${API_URL}/transferencias/${entregaId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ destinatario_id: destinatarioId, mensagem }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao solicitar transferência');
+  }
+  return res.json();
+}
+
+export async function listarTransferenciasRecebidas(token: string): Promise<TransferenciaResponse[]> {
+  const res = await apiFetch(`${API_URL}/transferencias/recebidas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar transferências');
+  return res.json();
+}
+
+export async function listarTransferenciasEnviadas(token: string): Promise<TransferenciaResponse[]> {
+  const res = await apiFetch(`${API_URL}/transferencias/enviadas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar transferências enviadas');
+  return res.json();
+}
+
+export async function responderTransferencia(
+  id: string,
+  acao: 'aceitar' | 'recusar' | 'cancelar',
+  token: string,
+): Promise<void> {
+  await apiFetch(`${API_URL}/transferencias/${id}/${acao}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
 }
 
 // ---- Admin: Listagem e detalhe ----
@@ -168,7 +303,7 @@ export async function listarEntregas(
   if (filtros.page) params.set('page', String(filtros.page));
   if (filtros.limit) params.set('limit', String(filtros.limit));
 
-  const res = await fetch(`${API_URL}/entregas?${params.toString()}`, {
+  const res = await apiFetch(`${API_URL}/entregas?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -181,7 +316,7 @@ export async function listarEntregas(
 }
 
 export async function buscarEntrega(id: string, token: string): Promise<EntregaResponse> {
-  const res = await fetch(`${API_URL}/entregas/${id}`, {
+  const res = await apiFetch(`${API_URL}/entregas/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -197,7 +332,7 @@ export async function reprocessarDanfe(
   id: string,
   token: string,
 ): Promise<{ danfe_pdf_base64: string | null }> {
-  const res = await fetch(`${API_URL}/entregas/${id}/danfe`, {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/danfe`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -210,6 +345,85 @@ export async function reprocessarDanfe(
   return res.json();
 }
 
+export async function reativarEntrega(id: string, comentario: string | undefined, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/reativar`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ comentario }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao reativar entrega');
+  }
+}
+
+export async function excluirImagemEntrega(imagemId: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/entregas/imagens/${imagemId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao excluir imagem');
+  }
+}
+
+export async function limparCamposEntrega(
+  id: string,
+  campos: { chave_nfe?: boolean; localizacao?: boolean },
+  token: string,
+): Promise<void> {
+  const res = await apiFetch(`${API_URL}/entregas/${id}/limpar-campos`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(campos),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao limpar campos');
+  }
+}
+
+export interface NotificacaoResponse {
+  id: string;
+  tipo: 'REATIVACAO' | 'TRANSFERENCIA' | 'MIGRACAO';
+  mensagem: string;
+  entrega_id: string | null;
+  lida: boolean;
+  criado_em: string;
+}
+
+export async function listarNotificacoes(token: string): Promise<NotificacaoResponse[]> {
+  const res = await apiFetch(`${API_URL}/notificacoes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar notificações');
+  return res.json();
+}
+
+export async function contarNotificacoesNaoLidas(token: string): Promise<number> {
+  const res = await apiFetch(`${API_URL}/notificacoes/nao-lidas`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.count ?? 0;
+}
+
+export async function marcarNotificacaoLida(id: string, token: string): Promise<void> {
+  await apiFetch(`${API_URL}/notificacoes/${id}/lida`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function marcarTodasNotificacoesLidas(token: string): Promise<void> {
+  await apiFetch(`${API_URL}/notificacoes/todas/lidas`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 export interface UsuarioResponse {
   id: string;
   nome: string;
@@ -218,7 +432,7 @@ export interface UsuarioResponse {
 }
 
 export async function listarUsuarios(token: string): Promise<UsuarioResponse[]> {
-  const res = await fetch(`${API_URL}/usuarios`, {
+  const res = await apiFetch(`${API_URL}/usuarios`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -234,7 +448,7 @@ export async function criarUsuario(
   dados: { nome: string; email: string; senha: string },
   token: string,
 ): Promise<UsuarioResponse> {
-  const res = await fetch(`${API_URL}/usuarios`, {
+  const res = await apiFetch(`${API_URL}/usuarios`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -283,7 +497,7 @@ export interface DashboardData {
 }
 
 export async function getClientesDashboard(token: string): Promise<{ cnpj: string; nome: string }[]> {
-  const res = await fetch(`${API_URL}/dashboard/clientes`, {
+  const res = await apiFetch(`${API_URL}/dashboard/clientes`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar clientes');
@@ -297,7 +511,7 @@ export async function getDashboard(token: string, filtros?: { data_inicio?: stri
   if (filtros?.cliente_cnpj) params.set('cliente_cnpj', filtros.cliente_cnpj);
   if (filtros?.entregador_id) params.set('entregador_id', filtros.entregador_id);
   const query = params.toString() ? `?${params.toString()}` : '';
-  const res = await fetch(`${API_URL}/dashboard${query}`, {
+  const res = await apiFetch(`${API_URL}/dashboard${query}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar dashboard');
@@ -346,7 +560,7 @@ export interface StatsGlobais {
 }
 
 export async function cadastrarEmpresa(dto: Record<string, string>, token: string): Promise<{ empresa: EmpresaResponse }> {
-  const res = await fetch(`${API_URL}/super-admin/empresas`, {
+  const res = await apiFetch(`${API_URL}/super-admin/empresas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(dto),
@@ -359,7 +573,7 @@ export async function cadastrarEmpresa(dto: Record<string, string>, token: strin
 }
 
 export async function listarEmpresas(token: string): Promise<EmpresaResponse[]> {
-  const res = await fetch(`${API_URL}/super-admin/empresas`, {
+  const res = await apiFetch(`${API_URL}/super-admin/empresas`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao listar empresas');
@@ -367,7 +581,7 @@ export async function listarEmpresas(token: string): Promise<EmpresaResponse[]> 
 }
 
 export async function buscarEmpresa(id: string, token: string): Promise<EmpresaResponse> {
-  const res = await fetch(`${API_URL}/super-admin/empresas/${id}`, {
+  const res = await apiFetch(`${API_URL}/super-admin/empresas/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Empresa não encontrada');
@@ -375,7 +589,7 @@ export async function buscarEmpresa(id: string, token: string): Promise<EmpresaR
 }
 
 export async function atualizarStatusEmpresa(id: string, status: string, token: string): Promise<EmpresaResponse> {
-  const res = await fetch(`${API_URL}/super-admin/empresas/${id}/status?status=${status}`, {
+  const res = await apiFetch(`${API_URL}/super-admin/empresas/${id}/status?status=${status}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -384,7 +598,7 @@ export async function atualizarStatusEmpresa(id: string, status: string, token: 
 }
 
 export async function getStatsGlobais(token: string): Promise<StatsGlobais> {
-  const res = await fetch(`${API_URL}/super-admin/stats`, {
+  const res = await apiFetch(`${API_URL}/super-admin/stats`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar stats');
@@ -392,7 +606,7 @@ export async function getStatsGlobais(token: string): Promise<StatsGlobais> {
 }
 
 export async function getMinhaContaInfo(token: string): Promise<{ id: string; nome: string; email: string; tipo: string; empresa_id: string | null; criado_em: string }> {
-  const res = await fetch(`${API_URL}/usuarios/me`, {
+  const res = await apiFetch(`${API_URL}/usuarios/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar conta');
@@ -418,7 +632,7 @@ export interface AuditLogEntry {
 }
 
 export async function listarLogs(token: string, page = 1, limit = 50): Promise<{ data: AuditLogEntry[]; total: number; page: number; limit: number }> {
-  const res = await fetch(`${API_URL}/audit?page=${page}&limit=${limit}`, {
+  const res = await apiFetch(`${API_URL}/audit?page=${page}&limit=${limit}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar logs');
@@ -430,7 +644,7 @@ export function getAuditExportUrl(): string {
 }
 
 export async function excluirEntregador(id: string, token: string): Promise<void> {
-  const res = await fetch(`${API_URL}/usuarios/${id}`, {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -440,14 +654,118 @@ export async function excluirEntregador(id: string, token: string): Promise<void
   }
 }
 
+export async function alterarSenhaEntregador(id: string, nova_senha: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}/senha`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ nova_senha }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao alterar senha');
+  }
+}
+
+export async function contarPendenciasEntregador(id: string, token: string): Promise<{ entregas_pendentes: number; transferencias_pendentes: number }> {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}/pendencias`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar pendências');
+  return res.json();
+}
+
+export async function migrarEntregador(id: string, destino_id: string, token: string): Promise<{ entregas_migradas: number; transferencias_migradas: number }> {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}/migrar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ destino_id }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao migrar responsabilidades');
+  }
+  return res.json();
+}
+
 export async function excluirEntrega(id: string, token: string): Promise<void> {
-  const res = await fetch(`${API_URL}/entregas/${id}`, {
+  const res = await apiFetch(`${API_URL}/entregas/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data?.mensagem ?? 'Erro ao excluir entrega');
+  }
+}
+
+// ---- Campos de Imagem ----
+
+export interface CampoImagemResponse {
+  id: string;
+  key: string;
+  label: string;
+  obrigatorio: boolean;
+  ordem: number;
+  ativo: boolean;
+}
+
+export async function listarCamposImagem(token: string): Promise<CampoImagemResponse[]> {
+  const res = await apiFetch(`${API_URL}/campos-imagem`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao listar campos');
+  return res.json();
+}
+
+export async function listarCamposImagemAtivos(token: string): Promise<CampoImagemResponse[]> {
+  const res = await apiFetch(`${API_URL}/campos-imagem/meus`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar campos');
+  return res.json();
+}
+
+export async function criarCampoImagem(
+  dto: { key: string; label: string; obrigatorio: boolean; ordem: number },
+  token: string,
+): Promise<CampoImagemResponse> {
+  const res = await apiFetch(`${API_URL}/campos-imagem`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dto),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao criar campo');
+  }
+  return res.json();
+}
+
+export async function atualizarCampoImagem(
+  id: string,
+  dto: { label?: string; obrigatorio?: boolean; ordem?: number; ativo?: boolean },
+  token: string,
+): Promise<CampoImagemResponse> {
+  const res = await apiFetch(`${API_URL}/campos-imagem/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dto),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao atualizar campo');
+  }
+  return res.json();
+}
+
+export async function excluirCampoImagem(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/campos-imagem/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao excluir campo');
   }
 }
 
@@ -510,7 +828,7 @@ export async function listarNfeEmitidas(
   if (filtros?.data_fim) params.set('data_fim', filtros.data_fim);
   if (filtros?.dest_cnpj) params.set('dest_cnpj', filtros.dest_cnpj);
   if (filtros?.chave_nfe) params.set('chave_nfe', filtros.chave_nfe);
-  const res = await fetch(`${API_URL}/nfe-emitidas?${params}`, {
+  const res = await apiFetch(`${API_URL}/nfe-emitidas?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao listar NF-e emitidas');
@@ -518,7 +836,7 @@ export async function listarNfeEmitidas(
 }
 
 export async function getCruzamentoNfe(token: string): Promise<CruzamentoResponse> {
-  const res = await fetch(`${API_URL}/nfe-emitidas/cruzamento`, {
+  const res = await apiFetch(`${API_URL}/nfe-emitidas/cruzamento`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar cruzamento');
@@ -526,14 +844,14 @@ export async function getCruzamentoNfe(token: string): Promise<CruzamentoRespons
 }
 
 export async function dispararCaptura(token: string): Promise<void> {
-  await fetch(`${API_URL}/nfe-emitidas/capturar`, {
+  await apiFetch(`${API_URL}/nfe-emitidas/capturar`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export async function getCertificadoInfo(token: string): Promise<CertificadoInfo> {
-  const res = await fetch(`${API_URL}/certificado`, {
+  const res = await apiFetch(`${API_URL}/certificado`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Erro ao carregar certificado');
@@ -548,7 +866,7 @@ export async function uploadCertificado(
   const form = new FormData();
   form.append('certificado', file);
   form.append('senha', senha);
-  const res = await fetch(`${API_URL}/certificado`, {
+  const res = await apiFetch(`${API_URL}/certificado`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: form,
@@ -561,7 +879,7 @@ export async function uploadCertificado(
 }
 
 export async function removerCertificado(token: string): Promise<void> {
-  await fetch(`${API_URL}/certificado`, {
+  await apiFetch(`${API_URL}/certificado`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

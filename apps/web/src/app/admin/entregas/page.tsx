@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  getToken, listarEntregas, listarUsuarios, getClientesDashboard, excluirEntrega,
+  getToken, listarEntregas, listarUsuarios, getClientesDashboard, excluirEntrega, conferirEntrega,
   type EntregaResponse, type UsuarioResponse, type FiltrosEntrega,
 } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
@@ -23,6 +23,7 @@ export default function EntregasPage() {
   const [cliente, setCliente] = useState(''); // armazena CNPJ
   const [page, setPage] = useState(1);
   const [excluindo, setExcluindo] = useState<string | null>(null);
+  const [conferindo, setConferindo] = useState<string | null>(null);
   const LIMIT = 20;
 
   const buscar = useCallback(async (filtros: FiltrosEntrega) => {
@@ -79,6 +80,17 @@ export default function EntregasPage() {
     } finally { setExcluindo(null); }
   }
 
+  async function handleConferir(id: string, conferida: boolean) {
+    const token = getToken(); if (!token) return;
+    setConferindo(id);
+    try {
+      await conferirEntrega(id, conferida, token);
+      setEntregas((prev) => prev.map((e) => e.id === id ? { ...e, conferida } : e));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao conferir');
+    } finally { setConferindo(null); }
+  }
+
   const totalPaginas = Math.ceil(total / LIMIT);
 
   return (
@@ -133,7 +145,7 @@ export default function EntregasPage() {
             <table style={s.tabela}>
               <thead>
                 <tr>
-                  {['Data/Hora', 'Entregador', 'Cliente', 'Chave NF-e', 'Status', 'DANFE', 'Ações'].map((h) => (
+                  {['Código', 'Data/Hora', 'Entregador', 'Cliente', 'Chave NF-e', 'Status', 'DANFE', 'Conf.', 'Ações'].map((h) => (
                     <th key={h} style={s.th}>{h}</th>
                   ))}
                 </tr>
@@ -143,16 +155,27 @@ export default function EntregasPage() {
                   const clienteNome = e.dados_nfe?.dest_nome ?? e.dados_nfe?.emit_nome ?? '—';
                   return (
                     <tr key={e.id} style={s.tr}>
+                      <td style={{ ...s.td, fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', letterSpacing: '0.08em', color: colors.accent }}>{e.codigo ?? '—'}</td>
                       <td style={s.td}>{new Date(e.data_hora).toLocaleString('pt-BR')}</td>
                       <td style={s.td}>{e.entregador_nome}</td>
                       <td style={{ ...s.td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={clienteNome}>{clienteNome}</td>
                       <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '12px', color: colors.textSecondary }}>{e.chave_nfe}</td>
                       <td style={s.td}><span style={{ ...s.badge, ...badgeStyle(e.status) }}>{e.status}</span></td>
                       <td style={s.td}><span title={e.danfe_pdf_base64 ? 'DANFE disponível' : 'DANFE pendente'}>{e.danfe_pdf_base64 ? '✅' : '⏳'}</span></td>
+                      <td style={{ ...s.td, textAlign: 'center' as const }}>
+                        <input
+                          type="checkbox"
+                          checked={!!e.conferida}
+                          disabled={conferindo === e.id || e.status === 'PENDENTE'}
+                          onChange={() => handleConferir(e.id, !e.conferida)}
+                          title={e.conferida ? 'Conferida — clique para desmarcar' : 'Marcar como conferida'}
+                          style={{ width: 16, height: 16, cursor: e.status === 'PENDENTE' ? 'not-allowed' : 'pointer', accentColor: colors.success }}
+                        />
+                      </td>
                       <td style={s.td}>
-                        <button onClick={() => router.push(`/admin/entregas/${e.id}`)} style={s.btnLink}>Ver →</button>
+                        <button onClick={() => router.push(`/admin/entregas/${e.id}`)} style={s.btnVer}>Ver →</button>
                         <button onClick={() => handleExcluir(e.id)} disabled={excluindo === e.id}
-                          style={{ ...s.btnLink, color: colors.error, marginLeft: '0.75rem', opacity: excluindo === e.id ? 0.5 : 1 }}>
+                          style={{ ...s.btnExcluir, opacity: excluindo === e.id ? 0.5 : 1 }}>
                           {excluindo === e.id ? '…' : 'Excluir'}
                         </button>
                       </td>
@@ -203,6 +226,8 @@ const s: Record<string, React.CSSProperties> = {
   tr: {},
   badge: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body },
   btnLink: { background: 'none', border: 'none', color: colors.accent, fontSize: '0.875rem', cursor: 'pointer', padding: 0, fontFamily: fonts.body, fontWeight: 500 },
+  btnVer: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.accentBorder}`, backgroundColor: colors.accentLight, color: colors.accent },
+  btnExcluir: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.errorBorder}`, backgroundColor: colors.errorBg, color: colors.error, marginLeft: '0.5rem' },
   paginacao: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem', marginTop: '1.25rem' },
   btnPag: { padding: '0.375rem 0.875rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, backgroundColor: colors.bgCard, color: colors.textSecondary, fontSize: '0.875rem', cursor: 'pointer', fontFamily: fonts.body },
   btnPagDisabled: { padding: '0.375rem 0.875rem', border: `1px solid ${colors.border}`, borderRadius: radius.md, backgroundColor: 'transparent', color: colors.textMuted, fontSize: '0.875rem', cursor: 'not-allowed', fontFamily: fonts.body },

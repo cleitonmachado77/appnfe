@@ -1,9 +1,21 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UsuariosService } from './usuarios.service';
 import { CriarUsuarioDto } from './criar-usuario.dto';
+import { IsString, IsUUID, MinLength } from 'class-validator';
+
+class AlterarSenhaDto {
+  @IsString()
+  @MinLength(8)
+  nova_senha!: string;
+}
+
+class MigrarDto {
+  @IsUUID()
+  destino_id!: string;
+}
 
 @Controller('usuarios')
 @UseGuards(JwtAuthGuard)
@@ -38,5 +50,29 @@ export class UsuariosController {
   @HttpCode(HttpStatus.NO_CONTENT)
   excluir(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.excluir(id, req.user.empresa_id);
+  }
+
+  @Patch(':id/senha')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  alterarSenha(@Param('id') id: string, @Body() dto: AlterarSenhaDto, @Request() req: any) {
+    return this.usuariosService.alterarSenha(id, dto.nova_senha, req.user.empresa_id);
+  }
+
+  @Get(':id/pendencias')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  contarPendencias(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.contarPendencias(id, req.user.empresa_id);
+  }
+
+  @Post(':id/migrar')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  migrar(@Param('id') id: string, @Body() dto: MigrarDto, @Request() req: any) {
+    return this.usuariosService.migrar(id, dto.destino_id, req.user.empresa_id);
   }
 }

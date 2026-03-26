@@ -6,3 +6,6 @@ export { Empresa, StatusEmpresa } from './empresa.entity';
 export { AuditLog } from './audit-log.entity';
 export { NfeEmitida, StatusNfeEmitida } from './nfe-emitida.entity';
 export { ControleNsu } from './controle-nsu.entity';
+export { CampoImagem } from './campo-imagem.entity';
+export { TransferenciaEntrega, StatusTransferencia } from './transferencia-entrega.entity';
+export { Notificacao, TipoNotificacao } from './notificacao.entity';

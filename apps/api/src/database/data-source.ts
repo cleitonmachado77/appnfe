@@ -14,11 +14,14 @@ import { Empresa } from '../entities/empresa.entity';
 import { AuditLog } from '../entities/audit-log.entity';
 import { NfeEmitida } from '../entities/nfe-emitida.entity';
 import { ControleNsu } from '../entities/controle-nsu.entity';
+import { CampoImagem } from '../entities/campo-imagem.entity';
+import { TransferenciaEntrega } from '../entities/transferencia-entrega.entity';
+import { Notificacao } from '../entities/notificacao.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
-  entities: [Usuario, Entrega, Imagem, DadosNfe, Empresa, AuditLog, NfeEmitida, ControleNsu],
+  entities: [Usuario, Entrega, Imagem, DadosNfe, Empresa, AuditLog, NfeEmitida, ControleNsu, CampoImagem, TransferenciaEntrega, Notificacao],
   migrations: ['src/database/migrations/*.ts'],
   synchronize: false,
 });
