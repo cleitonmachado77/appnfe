@@ -83,6 +83,19 @@ export class Empresa {
   @Column({ type: 'varchar', length: 14, nullable: true })
   responsavel_cpf!: string | null;
 
+  // Certificado Digital A1 (armazenado criptografado)
+  @Column({ type: 'text', nullable: true, select: false })
+  cert_pfx_encrypted!: string | null;
+
+  @Column({ type: 'text', nullable: true, select: false })
+  cert_senha_encrypted!: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cert_validade!: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  cert_titular!: string | null;
+
   // Plano / status
   @Column({ type: 'varchar', length: 50, nullable: true })
   plano!: string | null;

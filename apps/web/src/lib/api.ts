@@ -450,3 +450,119 @@ export async function excluirEntrega(id: string, token: string): Promise<void> {
     throw new Error(data?.mensagem ?? 'Erro ao excluir entrega');
   }
 }
+
+// ---- NF-e Emitidas ----
+
+export interface NfeEmitidaResponse {
+  id: string;
+  empresa_id: string;
+  chave_nfe: string;
+  numero_nfe: string | null;
+  serie: string | null;
+  dest_nome: string | null;
+  dest_cnpj_cpf: string | null;
+  dest_municipio: string | null;
+  dest_uf: string | null;
+  valor_total: number | null;
+  data_emissao: string | null;
+  natureza_operacao: string | null;
+  status: 'PENDENTE' | 'COMPLETA' | 'CANCELADA' | 'ERRO';
+  nsu: string | null;
+  danfe_pdf_base64: string | null;
+  entrega_chave_nfe: string | null;
+  criado_em: string;
+}
+
+export interface ListaNfeEmitidas {
+  data: NfeEmitidaResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface CruzamentoResponse {
+  com_entrega: Record<string, unknown>[];
+  sem_entrega: NfeEmitidaResponse[];
+  total_com_entrega: number;
+  total_sem_entrega: number;
+}
+
+export interface CertificadoInfo {
+  configurado: boolean;
+  titular: string | null;
+  validade: string | null;
+  vencido: boolean;
+}
+
+export async function listarNfeEmitidas(
+  token: string,
+  filtros?: {
+    page?: number; limit?: number; status?: string;
+    data_inicio?: string; data_fim?: string;
+    dest_cnpj?: string; chave_nfe?: string;
+  },
+): Promise<ListaNfeEmitidas> {
+  const params = new URLSearchParams();
+  if (filtros?.page) params.set('page', String(filtros.page));
+  if (filtros?.limit) params.set('limit', String(filtros.limit));
+  if (filtros?.status) params.set('status', filtros.status);
+  if (filtros?.data_inicio) params.set('data_inicio', filtros.data_inicio);
+  if (filtros?.data_fim) params.set('data_fim', filtros.data_fim);
+  if (filtros?.dest_cnpj) params.set('dest_cnpj', filtros.dest_cnpj);
+  if (filtros?.chave_nfe) params.set('chave_nfe', filtros.chave_nfe);
+  const res = await fetch(`${API_URL}/nfe-emitidas?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao listar NF-e emitidas');
+  return res.json();
+}
+
+export async function getCruzamentoNfe(token: string): Promise<CruzamentoResponse> {
+  const res = await fetch(`${API_URL}/nfe-emitidas/cruzamento`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar cruzamento');
+  return res.json();
+}
+
+export async function dispararCaptura(token: string): Promise<void> {
+  await fetch(`${API_URL}/nfe-emitidas/capturar`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function getCertificadoInfo(token: string): Promise<CertificadoInfo> {
+  const res = await fetch(`${API_URL}/certificado`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Erro ao carregar certificado');
+  return res.json();
+}
+
+export async function uploadCertificado(
+  token: string,
+  file: File,
+  senha: string,
+): Promise<{ titular: string; validade: string }> {
+  const form = new FormData();
+  form.append('certificado', file);
+  form.append('senha', senha);
+  const res = await fetch(`${API_URL}/certificado`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao enviar certificado');
+  }
+  return res.json();
+}
+
+export async function removerCertificado(token: string): Promise<void> {
+  await fetch(`${API_URL}/certificado`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
