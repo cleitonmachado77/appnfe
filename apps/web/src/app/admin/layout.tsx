@@ -9,6 +9,7 @@ import { colors, fonts, radius } from '@/lib/brand';
 
 const NAV_LINKS = [
   { href: '/admin/dashboard', label: 'Dashboard' },
+  { href: '/admin/conferencia', label: 'Conferência' },
   { href: '/admin/entregas', label: 'Entregas' },
   { href: '/admin/emissoes', label: 'Emissões' },
   { href: '/admin/entregadores', label: 'Entregadores' },
