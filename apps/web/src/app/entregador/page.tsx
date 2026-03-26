@@ -18,6 +18,7 @@ import { colors, fonts, radius } from '@/lib/brand';
 
 type Aba = 'nova' | 'pendentes';
 type EstadoEnvio = 'idle' | 'enviando' | 'sucesso' | 'erro';
+const CAMPOS_SEM_AUSENCIA = new Set(['CANHOTO', 'LOCAL']);
 let contadorReset = 0;
 
 export default function EntregadorPage() {
@@ -160,6 +161,7 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
   const router = useRouter();
   const [chaveNfe, setChaveNfe] = useState('');
   const [imagens, setImagens] = useState<Record<string, File | null>>({});
+  const [ausentes, setAusentes] = useState<Record<string, boolean>>({});
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [estado, setEstado] = useState<EstadoEnvio>('idle');
@@ -170,6 +172,7 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
     const init: Record<string, File | null> = {};
     campos.forEach((c) => { init[c.key] = null; });
     setImagens(init);
+    setAusentes({});
   }, [campos]);
 
   function limpar() {
@@ -178,13 +181,16 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
     const r: Record<string, File | null> = {};
     campos.forEach((c) => { r[c.key] = null; });
     setImagens(r);
+    setAusentes({});
     setLatitude(null); setLongitude(null);
     setEstado('idle'); setErro('');
     setResetKey(contadorReset);
   }
 
   const camposObrig = campos.filter((c) => c.obrigatorio);
-  const podeEnviar = chaveNfe.length === 44 && camposObrig.every((c) => imagens[c.key]) && latitude !== null;
+  // campo obrigatório está ok se tem imagem OU foi marcado como ausente
+  const camposObrigOk = camposObrig.every((c) => imagens[c.key] || ausentes[c.key]);
+  const podeEnviar = chaveNfe.length === 44 && camposObrigOk && latitude !== null;
   const podeSalvarPendente = chaveNfe.length === 44;
 
   async function enviar(salvarPendente: boolean) {
@@ -195,12 +201,14 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
       const uploads = await Promise.all(
         camposComImg.map((c) => uploadImagem(imagens[c.key]!, token).then((r) => ({ url_arquivo: r.url_arquivo, tipo: c.key }))),
       );
+      const camposAusentesKeys = Object.entries(ausentes).filter(([, v]) => v).map(([k]) => k);
       await criarEntrega({
         chave_nfe: chaveNfe,
         latitude: latitude ?? 0,
         longitude: longitude ?? 0,
         imagens: uploads,
         status: salvarPendente ? 'PENDENTE' : 'ENVIADO',
+        campos_ausentes: camposAusentesKeys.length ? camposAusentesKeys : undefined,
       }, token);
       setEstado('sucesso');
       if (salvarPendente) onPendenteCriado();
@@ -212,7 +220,7 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
 
   const pendentes = [
     chaveNfe.length !== 44 && 'Chave NF-e',
-    ...camposObrig.filter((c) => !imagens[c.key]).map((c) => c.label),
+    ...camposObrig.filter((c) => !imagens[c.key] && !ausentes[c.key]).map((c) => c.label),
     latitude === null && 'Localização',
   ].filter(Boolean) as string[];
 
@@ -237,8 +245,22 @@ function NovaEntregaForm({ campos, onPendenteCriado }: { campos: CampoImagemResp
             key={`${campo.key}-${resetKey}`}
             tipo={campo.key as any}
             label={campo.label}
-            onImagemSelecionada={(file) => setImagens((prev) => ({ ...prev, [campo.key]: file }))}
+            onImagemSelecionada={(file) => {
+              setImagens((prev) => ({ ...prev, [campo.key]: file }));
+              if (file) setAusentes((prev) => ({ ...prev, [campo.key]: false }));
+            }}
           />
+          {campo.obrigatorio && !imagens[campo.key] && !CAMPOS_SEM_AUSENCIA.has(campo.key) && (
+            <label style={s.ausenteLabel}>
+              <input
+                type="checkbox"
+                checked={!!ausentes[campo.key]}
+                onChange={(e) => setAusentes((prev) => ({ ...prev, [campo.key]: e.target.checked }))}
+                style={{ marginRight: 8, accentColor: colors.warning }}
+              />
+              Este item não existe nesta entrega
+            </label>
+          )}
         </Secao>
       ))}
 
@@ -299,6 +321,7 @@ function PendentesLista({
   const [recebidas, setRecebidas] = useState<TransferenciaResponse[]>([]);
   const [enviadas, setEnviadas] = useState<TransferenciaResponse[]>([]);
   const [respondendo, setRespondendo] = useState<string | null>(null);
+  const [enviandoParcial, setEnviandoParcial] = useState<string | null>(null);
 
   useEffect(() => {
     const token = getToken(); if (!token) return;
@@ -335,6 +358,20 @@ function PendentesLista({
     await responderTransferencia(id, 'cancelar', token);
     setEnviadas((prev) => prev.filter((t) => t.id !== id));
     onFinalizado();
+  }
+
+  async function handleEnviarParcial(e: EntregaResponse) {
+    if (!confirm('Enviar esta entrega como parcial? Ela será enviada com as informações/imagens que já possui.')) return;
+    const token = getToken(); if (!token) return;
+    setEnviandoParcial(e.id);
+    try {
+      const lat = Number(e.latitude) || 0;
+      const lng = Number(e.longitude) || 0;
+      await finalizarEntrega(e.id, { imagens: [], latitude: lat, longitude: lng, parcial: true }, token);
+      onFinalizado();
+    } finally {
+      setEnviandoParcial(null);
+    }
   }
 
   if (carregando) return (
@@ -465,12 +502,21 @@ function PendentesLista({
                     <button onClick={() => setSelecionada(e)} style={s.btnRetomar} disabled={emTransferencia}>Retomar →</button>
                     <button onClick={() => setTransferindo(e)} style={s.btnTransferir} disabled={emTransferencia}>Transferir</button>
                     <button
-                      onClick={() => handleExcluir(e)}
-                      disabled={excluindo === e.id || emTransferencia}
-                      style={{ ...s.btnExcluirPendente, opacity: excluindo === e.id || emTransferencia ? 0.5 : 1 }}
+                      onClick={() => handleEnviarParcial(e)}
+                      disabled={enviandoParcial === e.id || emTransferencia}
+                      style={{ ...s.btnParcial, opacity: enviandoParcial === e.id || emTransferencia ? 0.5 : 1 }}
                     >
-                      {excluindo === e.id ? '…' : 'Excluir'}
+                      {enviandoParcial === e.id ? '…' : 'Enviar Parcial'}
                     </button>
+                    {!e.comentario_reativacao && (
+                      <button
+                        onClick={() => handleExcluir(e)}
+                        disabled={excluindo === e.id || emTransferencia}
+                        style={{ ...s.btnExcluirPendente, opacity: excluindo === e.id || emTransferencia ? 0.5 : 1 }}
+                      >
+                        {excluindo === e.id ? '…' : 'Excluir'}
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -588,6 +634,11 @@ function FinalizarForm({
     camposFaltando.forEach((c) => { r[c.key] = null; });
     return r;
   });
+  const [ausentes, setAusentes] = useState<Record<string, boolean>>(() => {
+    const r: Record<string, boolean> = {};
+    (entrega.campos_ausentes ?? []).forEach((k) => { r[k] = true; });
+    return r;
+  });
   const [latitude, setLatitude] = useState<number | null>(temLocalizacao ? Number(entrega.latitude) : null);
   const [longitude, setLongitude] = useState<number | null>(temLocalizacao ? Number(entrega.longitude) : null);
   const [atualizarLoc, setAtualizarLoc] = useState(!temLocalizacao);
@@ -597,7 +648,7 @@ function FinalizarForm({
 
   const camposObrigFaltando = camposFaltando.filter((c) => c.obrigatorio);
   const locOk = latitude !== null && longitude !== null;
-  const podeFinalizar = camposObrigFaltando.every((c) => imagens[c.key]) && locOk;
+  const podeFinalizar = camposObrigFaltando.every((c) => imagens[c.key] || ausentes[c.key]) && locOk;
 
   async function handleFinalizar() {
     const token = getToken(); if (!token) { router.replace('/login'); return; }
@@ -607,7 +658,13 @@ function FinalizarForm({
       const uploads = await Promise.all(
         camposComImg.map((c) => uploadImagem(imagens[c.key]!, token).then((r) => ({ url_arquivo: r.url_arquivo, tipo: c.key }))),
       );
-      await finalizarEntrega(entrega.id, { imagens: uploads, latitude: latitude!, longitude: longitude! }, token);
+      const camposAusentesKeys = Object.entries(ausentes).filter(([, v]) => v).map(([k]) => k);
+      await finalizarEntrega(entrega.id, {
+        imagens: uploads,
+        latitude: latitude!,
+        longitude: longitude!,
+        campos_ausentes: camposAusentesKeys.length ? camposAusentesKeys : undefined,
+      }, token);
       setEstado('sucesso');
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Erro ao finalizar.');
@@ -661,8 +718,22 @@ function FinalizarForm({
               key={`fin-${campo.key}-${resetKey}`}
               tipo={campo.key as any}
               label={campo.label}
-              onImagemSelecionada={(file) => setImagens((prev) => ({ ...prev, [campo.key]: file }))}
+              onImagemSelecionada={(file) => {
+                setImagens((prev) => ({ ...prev, [campo.key]: file }));
+                if (file) setAusentes((prev) => ({ ...prev, [campo.key]: false }));
+              }}
             />
+            {campo.obrigatorio && !imagens[campo.key] && !CAMPOS_SEM_AUSENCIA.has(campo.key) && (
+              <label style={s.ausenteLabel}>
+                <input
+                  type="checkbox"
+                  checked={!!ausentes[campo.key]}
+                  onChange={(e) => setAusentes((prev) => ({ ...prev, [campo.key]: e.target.checked }))}
+                  style={{ marginRight: 8, accentColor: colors.warning }}
+                />
+                Este item não existe nesta entrega
+              </label>
+            )}
           </Secao>
         ))
       )}
@@ -773,6 +844,7 @@ const s: Record<string, React.CSSProperties> = {
   btnRetomar: { padding: '8px 14px', backgroundColor: colors.accentLight, color: colors.accent, border: `1px solid ${colors.accentBorder}`, borderRadius: radius.md, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
   btnTransferir: { padding: '6px 14px', backgroundColor: colors.warningBg, color: colors.warning, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
   btnExcluirPendente: { padding: '6px 14px', backgroundColor: colors.errorBg, color: colors.error, border: `1px solid ${colors.errorBorder}`, borderRadius: radius.md, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
+  btnParcial: { padding: '6px 14px', backgroundColor: colors.warningBg, color: colors.warning, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
   btnAceitar: { padding: '7px 14px', backgroundColor: colors.successBg, color: colors.success, border: `1px solid ${colors.successBorder}`, borderRadius: radius.md, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
   btnRecusar: { padding: '6px 14px', backgroundColor: colors.errorBg, color: colors.error, border: `1px solid ${colors.errorBorder}`, borderRadius: radius.md, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: fonts.body, whiteSpace: 'nowrap' },
   transCard: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 },
@@ -786,4 +858,5 @@ const s: Record<string, React.CSSProperties> = {
   imgLabel: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 9, textAlign: 'center', padding: '2px 0', fontFamily: fonts.body },
   vazio: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '3rem 0', textAlign: 'center' },
   spinner: { display: 'inline-block', width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
+  ausenteLabel: { display: 'flex', alignItems: 'center', fontSize: 13, color: colors.warning, fontFamily: fonts.body, padding: '8px 12px', backgroundColor: colors.warningBg, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, cursor: 'pointer', marginTop: 4 },
 };

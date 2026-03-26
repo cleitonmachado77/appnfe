@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, listarUsuarios, criarUsuario, excluirEntregador, alterarSenhaEntregador, contarPendenciasEntregador, migrarEntregador, type UsuarioResponse } from '@/lib/api';
+import { getToken, listarUsuarios, criarUsuario, excluirEntregador, excluirEntregadorPermanente, reativarEntregador, alterarSenhaEntregador, contarPendenciasEntregador, migrarEntregador, type UsuarioResponse } from '@/lib/api';
 import { colors, fonts, radius, shadow } from '@/lib/brand';
 
 type EntregadorItem = UsuarioResponse & { criado_em?: string };
@@ -20,6 +20,7 @@ export default function EntregadoresPage() {
   const [erroForm, setErroForm] = useState('');
   const [sucesso, setSucesso] = useState('');
   const [excluindo, setExcluindo] = useState<string | null>(null);
+  const [alternandoStatus, setAlternandoStatus] = useState<string | null>(null);
   const [modalSenha, setModalSenha] = useState<EntregadorItem | null>(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
@@ -47,16 +48,34 @@ export default function EntregadoresPage() {
   useEffect(() => { carregar(); }, []);
 
   async function handleExcluir(id: string, nome: string) {
-    if (!confirm(`Excluir o entregador "${nome}"? Esta ação não pode ser desfeita.`)) return;
+    if (!confirm(`Excluir permanentemente o entregador "${nome}"? Esta ação não pode ser desfeita.`)) return;
     const token = getToken();
     if (!token) return;
     setExcluindo(id);
     try {
-      await excluirEntregador(id, token);
+      await excluirEntregadorPermanente(id, token);
       setEntregadores((prev) => prev.filter((u) => u.id !== id));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao excluir');
     } finally { setExcluindo(null); }
+  }
+
+  async function handleAlternarStatus(u: EntregadorItem) {
+    const acao = u.ativo !== false ? 'inativar' : 'reativar';
+    if (!confirm(`${acao === 'inativar' ? 'Inativar' : 'Reativar'} o entregador "${u.nome}"?`)) return;
+    const token = getToken(); if (!token) return;
+    setAlternandoStatus(u.id);
+    try {
+      if (acao === 'inativar') {
+        await excluirEntregador(u.id, token);
+        setEntregadores((prev) => prev.map((e) => e.id === u.id ? { ...e, ativo: false, inativado_em: new Date().toISOString() } : e));
+      } else {
+        await reativarEntregador(u.id, token);
+        setEntregadores((prev) => prev.map((e) => e.id === u.id ? { ...e, ativo: true, inativado_em: null } : e));
+      }
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : `Erro ao ${acao}`);
+    } finally { setAlternandoStatus(null); }
   }
 
   function abrirModal() {
@@ -145,29 +164,55 @@ export default function EntregadoresPage() {
               <tr>
                 <th style={s.th}>Nome</th>
                 <th style={s.th}>Email</th>
+                <th style={s.th}>Status</th>
                 <th style={s.th}>Cadastrado em</th>
                 <th style={s.th}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {entregadores.map((u) => (
-                <tr key={u.id}>
+              {entregadores.map((u) => {
+                const inativo = u.ativo === false;
+                const inativadoEm = u.inativado_em ? new Date(u.inativado_em) : null;
+                const diasInativo = inativadoEm ? Math.floor((Date.now() - inativadoEm.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                const podeExcluir = inativo && diasInativo >= 7;
+                return (
+                <tr key={u.id} style={{ opacity: inativo ? 0.6 : 1 }}>
                   <td style={s.td}>{u.nome}</td>
                   <td style={s.td}>{u.email}</td>
+                  <td style={s.td}>
+                    <span style={{ ...s.statusBadge, ...(inativo ? s.statusInativo : s.statusAtivo) }}>
+                      {inativo ? 'Inativo' : 'Ativo'}
+                    </span>
+                    {inativo && inativadoEm && (
+                      <span style={{ marginLeft: 6, fontSize: '0.65rem', color: colors.textMuted, fontFamily: fonts.body }}>
+                        há {diasInativo} dia{diasInativo !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </td>
                   <td style={s.td}>{u.criado_em ? new Date(u.criado_em).toLocaleDateString('pt-BR') : '-'}</td>
                   <td style={s.td}>
-                    <button onClick={() => abrirModalSenha(u)} style={s.btnSenha}>Senha</button>
-                    <button onClick={() => abrirModalMigrar(u)} style={s.btnMigrar}>Migrar</button>
+                    {!inativo && <button onClick={() => abrirModalSenha(u)} style={s.btnSenha}>Senha</button>}
+                    {!inativo && <button onClick={() => abrirModalMigrar(u)} style={s.btnMigrar}>Migrar</button>}
                     <button
-                      onClick={() => handleExcluir(u.id, u.nome)}
-                      disabled={excluindo === u.id}
-                      style={{ ...s.btnExcluir, opacity: excluindo === u.id ? 0.5 : 1 }}
+                      onClick={() => handleAlternarStatus(u)}
+                      disabled={alternandoStatus === u.id}
+                      style={{ ...(inativo ? s.btnReativar : s.btnInativar), opacity: alternandoStatus === u.id ? 0.5 : 1, marginLeft: '0.5rem' }}
                     >
-                      {excluindo === u.id ? '…' : 'Excluir'}
+                      {alternandoStatus === u.id ? '…' : inativo ? 'Reativar' : 'Inativar'}
                     </button>
+                    {podeExcluir && (
+                      <button
+                        onClick={() => handleExcluir(u.id, u.nome)}
+                        disabled={excluindo === u.id}
+                        style={{ ...s.btnExcluir, opacity: excluindo === u.id ? 0.5 : 1 }}
+                      >
+                        {excluindo === u.id ? '…' : 'Excluir'}
+                      </button>
+                    )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -330,6 +375,11 @@ const s: Record<string, React.CSSProperties> = {
   btnSenha: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.accentBorder}`, backgroundColor: colors.accentLight, color: colors.accent },
   btnMigrar: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.warningBorder}`, backgroundColor: colors.warningBg, color: colors.warning, marginLeft: '0.5rem' },
   btnExcluir: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.errorBorder}`, backgroundColor: colors.errorBg, color: colors.error, marginLeft: '0.5rem' },
+  btnInativar: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.errorBorder}`, backgroundColor: colors.errorBg, color: colors.error },
+  btnReativar: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body, cursor: 'pointer', border: `1px solid ${colors.successBorder}`, backgroundColor: colors.successBg, color: colors.success },
+  statusBadge: { display: 'inline-block', padding: '3px 10px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: 600, fontFamily: fonts.body },
+  statusAtivo: { backgroundColor: colors.successBg, color: colors.success, border: `1px solid ${colors.successBorder}` },
+  statusInativo: { backgroundColor: colors.errorBg, color: colors.error, border: `1px solid ${colors.errorBorder}` },
   overlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   modal: { backgroundColor: colors.bgCard, borderRadius: radius.xl, padding: '1.75rem', width: '100%', maxWidth: '440px', boxShadow: shadow.modal, border: `1px solid ${colors.border}` },
   modalTitulo: { fontSize: '1.125rem', fontWeight: 700, color: colors.textPrimary, margin: '0 0 0.25rem', fontFamily: fonts.title },

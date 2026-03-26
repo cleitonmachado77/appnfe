@@ -61,6 +61,7 @@ export class EntregasService {
       longitude: dto.longitude,
       status: isPendente ? StatusEntrega.PENDENTE : StatusEntrega.ENVIADO,
       codigo: await this.gerarCodigoUnico(),
+      campos_ausentes: dto.campos_ausentes?.length ? dto.campos_ausentes : null,
     });
 
     const entregaSalva = await this.entregaRepository.save(entrega);
@@ -138,6 +139,8 @@ export class EntregasService {
       longitude: dto.longitude,
       data_hora: new Date(),
       comentario_reativacao: null,
+      campos_ausentes: dto.campos_ausentes?.length ? dto.campos_ausentes : null,
+      parcial: dto.parcial ?? false,
     });
 
     this.meuDanfeService.obterDadosCompletos(entrega.chave_nfe).then(async ({ pdfBase64, dadosNfe }) => {
@@ -204,6 +207,8 @@ export class EntregasService {
       imagens: e.imagens ?? [],
       danfe_pdf_base64: e.danfe_pdf_base64 ?? null,
       dados_nfe: e.dadosNfe ?? null,
+      campos_ausentes: e.campos_ausentes ?? null,
+      parcial: e.parcial ?? false,
     }));
 
     return { data: data as any, total, page, limit };
@@ -241,6 +246,8 @@ export class EntregasService {
       imagens: entrega.imagens,
       danfe_pdf_base64: entrega.danfe_pdf_base64 ?? null,
       dados_nfe: dadosNfe ?? null,
+      campos_ausentes: entrega.campos_ausentes ?? null,
+      parcial: entrega.parcial ?? false,
     };
   }
 
@@ -370,4 +377,6 @@ export interface EntregaDetalheResponse {
   imagens: import('../entities/imagem.entity').Imagem[];
   danfe_pdf_base64: string | null;
   dados_nfe: DadosNfe | null;
+  campos_ausentes: string[] | null;
+  parcial: boolean;
 }

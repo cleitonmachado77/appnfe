@@ -39,6 +39,9 @@ export class Usuario {
   @Column({ type: 'boolean', default: true })
   ativo!: boolean;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  inativado_em!: Date | null;
+
   @ManyToOne(() => Empresa, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'empresa_id' })
   empresa!: Empresa | null;

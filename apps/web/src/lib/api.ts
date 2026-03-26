@@ -91,6 +91,7 @@ export interface CriarEntregaDto {
   longitude: number;
   imagens: ImagemEntregaDto[];
   status?: 'PENDENTE' | 'ENVIADO';
+  campos_ausentes?: string[];
 }
 
 export interface DadosNfe {
@@ -130,6 +131,8 @@ export interface EntregaResponse {
   danfe_pdf_base64?: string | null;
   dados_nfe?: DadosNfe | null;
   comentario_reativacao?: string | null;
+  campos_ausentes?: string[] | null;
+  parcial?: boolean;
 }
 
 export async function conferirEntrega(id: string, conferida: boolean, token: string): Promise<void> {
@@ -175,7 +178,7 @@ export async function listarMinhasPendentes(token: string): Promise<EntregaRespo
 
 export async function finalizarEntrega(
   id: string,
-  dados: { imagens: ImagemEntregaDto[]; latitude: number; longitude: number },
+  dados: { imagens: ImagemEntregaDto[]; latitude: number; longitude: number; campos_ausentes?: string[]; parcial?: boolean },
   token: string,
 ): Promise<EntregaResponse> {
   const res = await apiFetch(`${API_URL}/entregas/${id}/finalizar`, {
@@ -429,6 +432,8 @@ export interface UsuarioResponse {
   nome: string;
   email: string;
   criado_em?: string;
+  ativo?: boolean;
+  inativado_em?: string | null;
 }
 
 export async function listarUsuarios(token: string): Promise<UsuarioResponse[]> {
@@ -651,6 +656,28 @@ export async function excluirEntregador(id: string, token: string): Promise<void
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data?.mensagem ?? 'Erro ao excluir entregador');
+  }
+}
+
+export async function excluirEntregadorPermanente(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}/permanente`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao excluir entregador permanentemente');
+  }
+}
+
+export async function reativarEntregador(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/${id}/reativar`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao reativar entregador');
   }
 }
 

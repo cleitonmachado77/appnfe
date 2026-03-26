@@ -51,8 +51,16 @@ export class Entrega {
   @Column({ type: 'text', nullable: true })
   comentario_reativacao!: string | null;
 
+  /** Chaves de campos obrigatórios que o entregador declarou ausentes na entrega */
+  @Column({ type: 'simple-array', nullable: true })
+  campos_ausentes!: string[] | null;
+
   @Column({ type: 'boolean', default: false })
   conferida!: boolean;
+
+  /** Indica que o entregador enviou a entrega com informações/imagens faltando */
+  @Column({ type: 'boolean', default: false })
+  parcial!: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
   conferida_em!: Date | null;

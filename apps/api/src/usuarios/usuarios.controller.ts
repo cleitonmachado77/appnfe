@@ -52,6 +52,22 @@ export class UsuariosController {
     return this.usuariosService.excluir(id, req.user.empresa_id);
   }
 
+  @Delete(':id/permanente')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  excluirPermanente(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.excluirPermanente(id, req.user.empresa_id);
+  }
+
+  @Patch(':id/reativar')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reativar(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.reativar(id, req.user.empresa_id);
+  }
+
   @Patch(':id/senha')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPER_ADMIN')

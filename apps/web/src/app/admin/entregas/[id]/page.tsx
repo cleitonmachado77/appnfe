@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { getToken, buscarEntrega, reprocessarDanfe, reativarEntrega, excluirImagemEntrega, limparCamposEntrega, conferirEntrega, type EntregaResponse } from '@/lib/api';
+import { getToken, buscarEntrega, reprocessarDanfe, reativarEntrega, excluirImagemEntrega, limparCamposEntrega, conferirEntrega, listarCamposImagem, type EntregaResponse, type CampoImagemResponse } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
 export default function DetalheEntregaPage() {
@@ -10,6 +10,7 @@ export default function DetalheEntregaPage() {
   const params = useParams();
   const id = params?.id as string;
   const [entrega, setEntrega] = useState<EntregaResponse | null>(null);
+  const [camposImagem, setCamposImagem] = useState<CampoImagemResponse[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
   const [imagemAmpliada, setImagemAmpliada] = useState<string | null>(null);
@@ -75,6 +76,7 @@ export default function DetalheEntregaPage() {
       .then(setEntrega)
       .catch((e) => setErro(e instanceof Error ? e.message : 'Erro ao carregar entrega'))
       .finally(() => setCarregando(false));
+    listarCamposImagem(token).then(setCamposImagem).catch(() => {});
   }, [id, router]);
 
   if (carregando) return (
@@ -180,6 +182,44 @@ export default function DetalheEntregaPage() {
         </div>
       </div>
 
+      {entrega.parcial && (() => {
+        const imagensPresentes = new Set(entrega.imagens.map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean));
+        const camposFaltantes = camposImagem.filter((c) => c.ativo && !imagensPresentes.has(c.key));
+        const semLocalizacao = Number(entrega.latitude) === 0 && Number(entrega.longitude) === 0;
+        return (
+          <div style={{ backgroundColor: colors.warningBg, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.lg, padding: '1.25rem', marginBottom: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '1.5rem', flexShrink: 0 }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: colors.warning, fontFamily: fonts.title }}>
+                Entrega Parcial
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: colors.textSecondary, fontFamily: fonts.body }}>
+                O entregador enviou esta entrega com informações ou imagens faltando.
+              </p>
+              {(camposFaltantes.length > 0 || semLocalizacao) && (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '0.75rem', fontWeight: 600, color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Campos faltantes:
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {camposFaltantes.map((c) => (
+                      <span key={c.key} style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: 9999, backgroundColor: 'transparent', border: `1px solid ${colors.warningBorder}`, color: colors.warning, fontFamily: fonts.body, fontWeight: 600 }}>
+                        {c.label}{c.obrigatorio ? ' (obrigatório)' : ''}
+                      </span>
+                    ))}
+                    {semLocalizacao && (
+                      <span style={{ fontSize: '0.75rem', padding: '3px 10px', borderRadius: 9999, backgroundColor: 'transparent', border: `1px solid ${colors.warningBorder}`, color: colors.warning, fontFamily: fonts.body, fontWeight: 600 }}>
+                        Localização (obrigatório)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {entrega.dados_nfe && (
         <div style={s.card}>
           <h2 style={s.secaoTitulo}>Dados da Nota Fiscal</h2>
@@ -235,6 +275,23 @@ export default function DetalheEntregaPage() {
 
       <div style={s.card}>
         <h2 style={s.secaoTitulo}>Imagens</h2>
+        {entrega.campos_ausentes && entrega.campos_ausentes.length > 0 && (
+          <div style={{ padding: '10px 14px', backgroundColor: colors.warningBg, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, marginBottom: '1rem', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <span style={{ fontSize: '1rem', flexShrink: 0 }}>⚠️</span>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: colors.warning, fontFamily: fonts.body }}>
+                Campos declarados ausentes pelo entregador
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                {entrega.campos_ausentes.map((key) => (
+                  <span key={key} style={{ fontSize: '0.75rem', color: colors.warning, backgroundColor: 'transparent', border: `1px solid ${colors.warningBorder}`, borderRadius: radius.full, padding: '2px 10px', fontFamily: fonts.body }}>
+                    {key.charAt(0) + key.slice(1).toLowerCase().replace(/_/g, ' ')}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {entrega.imagens.length === 0 ? (
           <div style={s.semImagens}>
             <span style={{ fontSize: '2rem' }}>🖼️</span>

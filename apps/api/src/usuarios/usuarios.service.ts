@@ -44,10 +44,10 @@ export class UsuariosService {
   }
 
   async listar(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
-    const where: any = { tipo: PerfilUsuario.ENTREGADOR, ativo: true };
+    const where: any = { tipo: PerfilUsuario.ENTREGADOR };
     if (empresa_id) where.empresa_id = empresa_id;
 
-    const usuarios = await this.usuariosRepository.find({ where, order: { criado_em: 'DESC' } });
+    const usuarios = await this.usuariosRepository.find({ where, order: { ativo: 'DESC', criado_em: 'DESC' } });
     return usuarios.map(({ senha_hash: _, ...u }) => u);
   }
 
@@ -57,7 +57,28 @@ export class UsuariosService {
     if (empresa_id) where.empresa_id = empresa_id;
     const usuario = await this.usuariosRepository.findOne({ where });
     if (!usuario) throw new NotFoundException('Entregador não encontrado');
-    await this.usuariosRepository.update(id, { ativo: false });
+    await this.usuariosRepository.update(id, { ativo: false, inativado_em: new Date() });
+  }
+
+  // Hard delete: exclui permanentemente (apenas se inativo há 7+ dias)
+  async excluirPermanente(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ENTREGADOR, ativo: false };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Entregador não encontrado');
+    if (!usuario.inativado_em) throw new BadRequestException('Entregador precisa estar inativo para ser excluído');
+    const dias = Math.floor((Date.now() - new Date(usuario.inativado_em).getTime()) / (1000 * 60 * 60 * 24));
+    if (dias < 7) throw new BadRequestException('Entregador precisa estar inativo há pelo menos 7 dias para ser excluído');
+    await this.usuariosRepository.delete(id);
+  }
+
+  async reativar(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ENTREGADOR };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Entregador não encontrado');
+    if (usuario.ativo) throw new BadRequestException('Entregador já está ativo');
+    await this.usuariosRepository.update(id, { ativo: true, inativado_em: null });
   }
 
   async alterarSenha(id: string, novaSenha: string, empresa_id?: string | null): Promise<void> {

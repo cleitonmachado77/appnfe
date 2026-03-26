@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getToken, listarEntregas, listarUsuarios, getClientesDashboard, excluirEntrega, conferirEntrega,
-  type EntregaResponse, type UsuarioResponse, type FiltrosEntrega,
+  listarCamposImagem,
+  type EntregaResponse, type UsuarioResponse, type FiltrosEntrega, type CampoImagemResponse,
 } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
@@ -13,6 +14,7 @@ export default function EntregasPage() {
   const [entregas, setEntregas] = useState<EntregaResponse[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioResponse[]>([]);
   const [clientes, setClientes] = useState<{ cnpj: string; nome: string }[]>([]);
+  const [camposImagem, setCamposImagem] = useState<CampoImagemResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -43,6 +45,7 @@ export default function EntregasPage() {
     if (!token) return;
     listarUsuarios(token).then(setUsuarios).catch(() => {});
     getClientesDashboard(token).then(setClientes).catch(() => {});
+    listarCamposImagem(token).then(setCamposImagem).catch(() => {});
   }, []);
 
   useEffect(() => { buscar({ page: 1, limit: LIMIT }); }, [buscar]);
@@ -153,14 +156,30 @@ export default function EntregasPage() {
               <tbody>
                 {entregas.map((e) => {
                   const clienteNome = e.dados_nfe?.dest_nome ?? e.dados_nfe?.emit_nome ?? '—';
+                  const camposAtivos = camposImagem.filter((c) => c.ativo);
+                  const totalEsperado = camposAtivos.length > 0 ? camposAtivos.length + 2 : e.imagens.length + 2; // imagens + chave_nfe + localização
+                  const imagensPresentes = new Set(e.imagens.map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean));
+                  const imgEnviadas = camposAtivos.length > 0 ? camposAtivos.filter((c) => imagensPresentes.has(c.key)).length : e.imagens.length;
+                  const camposAusentesCount = (e.campos_ausentes ?? []).filter((k) => camposAtivos.length > 0 ? !imagensPresentes.has(k) : true).length;
+                  const temChave = !!e.chave_nfe && e.chave_nfe.length === 44;
+                  const temLoc = Number(e.latitude) !== 0 || Number(e.longitude) !== 0;
+                  const itensEnviados = imgEnviadas + camposAusentesCount + (temChave ? 1 : 0) + (temLoc ? 1 : 0);
+                  const completo = itensEnviados === totalEsperado;
                   return (
                     <tr key={e.id} style={s.tr}>
                       <td style={{ ...s.td, fontFamily: 'monospace', fontWeight: 700, fontSize: '13px', letterSpacing: '0.08em', color: colors.accent }}>{e.codigo ?? '—'}</td>
                       <td style={s.td}>{new Date(e.data_hora).toLocaleString('pt-BR')}</td>
                       <td style={s.td}>{e.entregador_nome}</td>
                       <td style={{ ...s.td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={clienteNome}>{clienteNome}</td>
-                      <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '12px', color: colors.textSecondary }}>{e.chave_nfe}</td>
-                      <td style={s.td}><span style={{ ...s.badge, ...badgeStyle(e.status) }}>{e.status}</span></td>
+                      <td style={{ ...s.td, fontFamily: 'monospace', fontSize: '11px', color: colors.textMuted, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={e.chave_nfe}>…{e.chave_nfe.slice(-10)}</td>
+                      <td style={s.td}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ ...s.badge, ...badgeStyle(e.status) }}>{e.status}</span>
+                          <span title={`${itensEnviados} de ${totalEsperado} itens enviados`} style={{ fontSize: '0.7rem', fontWeight: 700, fontFamily: 'monospace', color: completo ? colors.success : colors.warning }}>{itensEnviados}/{totalEsperado}</span>
+                          {e.parcial && <span title="Entrega enviada como parcial" style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: 9999, backgroundColor: colors.warningBg, color: colors.warning, border: `1px solid ${colors.warningBorder}`, fontFamily: fonts.body, fontWeight: 600 }}>PARCIAL</span>}
+                          {e.campos_ausentes && e.campos_ausentes.length > 0 && <span title={`Campos ausentes: ${e.campos_ausentes.join(', ')}`} style={{ cursor: 'help', fontSize: '0.75rem' }}>⚠️</span>}
+                        </div>
+                      </td>
                       <td style={s.td}><span title={e.danfe_pdf_base64 ? 'DANFE disponível' : 'DANFE pendente'}>{e.danfe_pdf_base64 ? '✅' : '⏳'}</span></td>
                       <td style={{ ...s.td, textAlign: 'center' as const }}>
                         <input

@@ -50,6 +50,12 @@ export class CriarEntregaDto {
   @IsOptional()
   @IsEnum(StatusEntrega)
   status?: StatusEntrega;
+
+  /** Chaves de campos obrigatórios que o entregador declarou ausentes nesta entrega */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  campos_ausentes?: string[];
 }
 
 export class FinalizarEntregaDto {
@@ -67,4 +73,14 @@ export class FinalizarEntregaDto {
   @Min(-180)
   @Max(180)
   longitude!: number;
+
+  /** Chaves de campos obrigatórios que o entregador declarou ausentes nesta entrega */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  campos_ausentes?: string[];
+
+  /** Indica que o entregador está enviando a entrega com informações/imagens faltando */
+  @IsOptional()
+  parcial?: boolean;
 }
