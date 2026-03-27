@@ -152,6 +152,20 @@ export default function DetalheEntregaPage() {
             )}
           </div>
         </div>
+
+        {entrega.comentario_reativacao && entrega.status === 'PENDENTE' && (
+          <div style={{ backgroundColor: colors.warningBg, border: `1px solid ${colors.warningBorder}`, borderRadius: radius.md, padding: '0.75rem 1rem', marginBottom: '1.25rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '1rem', flexShrink: 0 }}>↺</span>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: colors.warning, fontFamily: fonts.body }}>
+                Entrega reativada — aguardando conclusão pelo entregador
+              </p>
+              <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body, fontStyle: 'italic' }}>
+                {entrega.comentario_reativacao}
+              </p>
+            </div>
+          </div>
+        )}
         <div style={s.grid}>
           <Campo label="Código" valor={entrega.codigo ?? '—'} mono />
           <CampoExcluivel

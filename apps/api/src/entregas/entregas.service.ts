@@ -296,6 +296,9 @@ export class EntregasService {
     if (entrega.status !== StatusEntrega.PENDENTE) {
       throw new BadRequestException('Só é possível excluir entregas com status PENDENTE');
     }
+    if (entrega.comentario_reativacao !== null) {
+      throw new BadRequestException('Entregas reativadas não podem ser excluídas pelo entregador');
+    }
     await this.entregaRepository.delete(id);
   }
 
@@ -333,7 +336,7 @@ export class EntregasService {
 
     await this.entregaRepository.update(id, {
       status: StatusEntrega.PENDENTE,
-      comentario_reativacao: comentario?.trim() || null,
+      comentario_reativacao: comentario?.trim() || 'Reativada pelo administrador',
     });
 
     const msg = comentario?.trim()
