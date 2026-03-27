@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "ADD+ Entregas",
+    "slug": "add-entregas",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A1A2E"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.addplus.entregas",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Precisamos da câmera para fotografar canhotos e locais de entrega.",
+        "NSLocationWhenInUseUsageDescription": "Precisamos da localização para registrar o ponto de entrega.",
+        "NSPhotoLibraryUsageDescription": "Precisamos acessar suas fotos para selecionar imagens de entrega.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A1A2E"
+      },
+      "package": "com.addplus.entregas",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-location",
+      "expo-image-picker",
+      "expo-secure-store",
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5fb59ea3-1219-4298-8d39-84c4885d104e"
+      }
+    },
+    "owner": "cleitonmachado"
+  }
+}

@@ -25,6 +25,7 @@ export default function DetalheEntregaPage() {
   });
   const [limpando, setLimpando] = useState<string | null>(null);
   const [conferindo, setConferindo] = useState(false);
+  const [camposImagemCarregados, setCamposImagemCarregados] = useState(false);
 
   async function handleConferir() {
     const token = getToken(); if (!token) return;
@@ -41,7 +42,9 @@ export default function DetalheEntregaPage() {
   const localizacaoVazia = Number(entrega?.latitude) === 0 && Number(entrega?.longitude) === 0;
   const imagensObrigatorias = camposImagem.filter((c) => c.ativo && c.obrigatorio);
   const imagensPresentes = new Set((entrega?.imagens ?? []).map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean));
-  const faltaImagem = imagensObrigatorias.some((c) => !imagensPresentes.has(c.key)) || camposLimpos.imagem;
+  // Só considera falta de imagem se camposImagem já foi carregado
+  const faltaImagemObrigatoria = camposImagemCarregados && imagensObrigatorias.some((c) => !imagensPresentes.has(c.key));
+  const faltaImagem = faltaImagemObrigatoria || camposLimpos.imagem;
 
   const podeReativar = entrega?.status !== 'PENDENTE' &&
     (camposLimpos.chave_nfe || camposLimpos.localizacao || faltaImagem || chaveVazia || localizacaoVazia);
@@ -83,7 +86,10 @@ export default function DetalheEntregaPage() {
       .then(setEntrega)
       .catch((e) => setErro(e instanceof Error ? e.message : 'Erro ao carregar entrega'))
       .finally(() => setCarregando(false));
-    listarCamposImagem(token).then(setCamposImagem).catch(() => {});
+    listarCamposImagem(token)
+      .then(setCamposImagem)
+      .catch(() => {})
+      .finally(() => setCamposImagemCarregados(true));
   }, [id, router]);
 
   if (carregando) return (
