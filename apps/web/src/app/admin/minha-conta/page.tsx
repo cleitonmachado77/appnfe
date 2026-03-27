@@ -6,7 +6,9 @@ import Link from 'next/link';
 import {
   getToken, getMinhaContaInfo,
   listarCamposImagem, criarCampoImagem, atualizarCampoImagem, excluirCampoImagem,
+  listarAdmins, criarAdmin, inativarAdmin, reativarAdmin, alterarSenhaAdmin,
   type CampoImagemResponse,
+  type AdminUsuarioResponse,
 } from '@/lib/api';
 import { colors, fonts, radius } from '@/lib/brand';
 
@@ -38,6 +40,22 @@ export default function MinhaContaPage() {
   const [editObrigatorio, setEditObrigatorio] = useState(true);
   const [editAtivo, setEditAtivo] = useState(true);
 
+  // usuários admin
+  const [admins, setAdmins] = useState<AdminUsuarioResponse[]>([]);
+  const [modalAdmin, setModalAdmin] = useState(false);
+  const [adminNome, setAdminNome] = useState('');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminSenha, setAdminSenha] = useState('');
+  const [salvandoAdmin, setSalvandoAdmin] = useState(false);
+  const [erroAdmin, setErroAdmin] = useState('');
+  const [sucessoAdmin, setSucessoAdmin] = useState('');
+  const [alternandoAdmin, setAlternandoAdmin] = useState<string | null>(null);
+  const [modalSenhaAdmin, setModalSenhaAdmin] = useState<AdminUsuarioResponse | null>(null);
+  const [novaSenhaAdmin, setNovaSenhaAdmin] = useState('');
+  const [salvandoSenhaAdmin, setSalvandoSenhaAdmin] = useState(false);
+  const [erroSenhaAdmin, setErroSenhaAdmin] = useState('');
+  const [sucessoSenhaAdmin, setSucessoSenhaAdmin] = useState(false);
+
   useEffect(() => {
     const token = getToken();
     if (!token) { router.replace('/login'); return; }
@@ -45,6 +63,7 @@ export default function MinhaContaPage() {
       .then((data) => setConta(data as ContaInfo))
       .finally(() => setCarregando(false));
     listarCamposImagem(token).then(setCampos).catch(() => {});
+    listarAdmins(token).then(setAdmins).catch(() => {});
   }, [router]);
 
   async function handleCriar(e: React.FormEvent) {
@@ -90,6 +109,55 @@ export default function MinhaContaPage() {
     } catch (err) {
       setErroCampos(err instanceof Error ? err.message : 'Erro ao excluir');
     }
+  }
+
+  // ---- Handlers Admin Users ----
+
+  async function handleCriarAdmin(e: React.FormEvent) {
+    e.preventDefault();
+    const token = getToken(); if (!token) return;
+    setSalvandoAdmin(true); setErroAdmin(''); setSucessoAdmin('');
+    try {
+      await criarAdmin({ nome: adminNome, email: adminEmail, senha: adminSenha }, token);
+      setSucessoAdmin(`Login criado para ${adminNome}.`);
+      setAdminNome(''); setAdminEmail(''); setAdminSenha('');
+      const lista = await listarAdmins(token);
+      setAdmins(lista);
+      setTimeout(() => { setSucessoAdmin(''); setModalAdmin(false); }, 2000);
+    } catch (err) {
+      setErroAdmin(err instanceof Error ? err.message : 'Erro ao criar usuário');
+    } finally { setSalvandoAdmin(false); }
+  }
+
+  async function handleAlternarAdmin(u: AdminUsuarioResponse) {
+    const acao = u.ativo !== false ? 'inativar' : 'reativar';
+    if (!confirm(`${acao === 'inativar' ? 'Inativar' : 'Reativar'} o usuário "${u.nome}"?`)) return;
+    const token = getToken(); if (!token) return;
+    setAlternandoAdmin(u.id);
+    try {
+      if (acao === 'inativar') {
+        await inativarAdmin(u.id, token);
+        setAdmins((prev) => prev.map((a) => a.id === u.id ? { ...a, ativo: false, inativado_em: new Date().toISOString() } : a));
+      } else {
+        await reativarAdmin(u.id, token);
+        setAdmins((prev) => prev.map((a) => a.id === u.id ? { ...a, ativo: true, inativado_em: null } : a));
+      }
+    } catch (err) {
+      setErroAdmin(err instanceof Error ? err.message : `Erro ao ${acao}`);
+    } finally { setAlternandoAdmin(null); }
+  }
+
+  async function handleSenhaAdmin(e: React.FormEvent) {
+    e.preventDefault();
+    const token = getToken(); if (!token) return;
+    setSalvandoSenhaAdmin(true); setErroSenhaAdmin('');
+    try {
+      await alterarSenhaAdmin(modalSenhaAdmin!.id, novaSenhaAdmin, token);
+      setSucessoSenhaAdmin(true);
+      setTimeout(() => { setModalSenhaAdmin(null); setSucessoSenhaAdmin(false); }, 2000);
+    } catch (err) {
+      setErroSenhaAdmin(err instanceof Error ? err.message : 'Erro ao alterar senha');
+    } finally { setSalvandoSenhaAdmin(false); }
   }
 
   if (carregando) return <p style={{ color: colors.textSecondary, fontFamily: fonts.body }}>Carregando…</p>;
@@ -208,6 +276,102 @@ export default function MinhaContaPage() {
       <Link href="/admin/minha-conta/logs" style={s.linkLogs}>
         📋 Ver Logs de Auditoria →
       </Link>
+
+      {/* Seção Usuários Admin */}
+      <div style={s.secao}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <p style={{ ...s.secaoTitulo, margin: 0 }}>Usuários do Painel</p>
+          <button onClick={() => { setModalAdmin(true); setErroAdmin(''); setSucessoAdmin(''); setAdminNome(''); setAdminEmail(''); setAdminSenha(''); }} style={s.btnAdicionar}>+ Novo Usuário</button>
+        </div>
+        <p style={{ margin: '0 0 1rem', fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body }}>
+          Gerencie logins de usuários que acessam o painel administrativo. Eles não são entregadores.
+        </p>
+
+        {erroAdmin && <p style={{ color: colors.error, fontSize: '0.8rem', marginBottom: '0.75rem', fontFamily: fonts.body }}>{erroAdmin}</p>}
+
+        {admins.length === 0 ? (
+          <p style={{ fontSize: '0.85rem', color: colors.textMuted, fontFamily: fonts.body }}>Nenhum usuário adicional cadastrado.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {admins.filter((a) => a.id !== conta.id).map((admin) => (
+              <div key={admin.id} style={{ ...s.campoRow, opacity: admin.ativo !== false ? 1 : 0.5 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: '0.875rem', color: colors.textPrimary, fontFamily: fonts.body, fontWeight: 500 }}>{admin.nome}</span>
+                  <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body }}>{admin.email}</span>
+                  {admin.ativo === false && <span style={s.tagInativo}>inativo</span>}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    onClick={() => { setModalSenhaAdmin(admin); setNovaSenhaAdmin(''); setErroSenhaAdmin(''); setSucessoSenhaAdmin(false); }}
+                    style={s.btnIcone}
+                    title="Alterar senha"
+                  >🔑</button>
+                  <button
+                    onClick={() => handleAlternarAdmin(admin)}
+                    disabled={alternandoAdmin === admin.id}
+                    style={s.btnIcone}
+                    title={admin.ativo !== false ? 'Inativar' : 'Reativar'}
+                  >{admin.ativo !== false ? '⛔' : '✅'}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal Criar Admin */}
+      {modalAdmin && (
+        <div style={s.overlay} onClick={() => setModalAdmin(false)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <p style={{ ...s.secaoTitulo, marginBottom: '1rem' }}>Novo Usuário do Painel</p>
+            {sucessoAdmin && <p style={{ color: colors.success, fontSize: '0.85rem', fontFamily: fonts.body }}>{sucessoAdmin}</p>}
+            <form onSubmit={handleCriarAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div>
+                <label style={s.label}>Nome</label>
+                <input value={adminNome} onChange={(e) => setAdminNome(e.target.value)} required style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={s.label}>E-mail</label>
+                <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={s.label}>Senha (mín. 8 caracteres)</label>
+                <input type="password" value={adminSenha} onChange={(e) => setAdminSenha(e.target.value)} required minLength={8} style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              {erroAdmin && <p style={{ color: colors.error, fontSize: '0.8rem', margin: 0, fontFamily: fonts.body }}>{erroAdmin}</p>}
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setModalAdmin(false)} style={s.btnCancelar}>Cancelar</button>
+                <button type="submit" disabled={salvandoAdmin} style={{ ...s.btnAdicionar, opacity: salvandoAdmin ? 0.6 : 1 }}>
+                  {salvandoAdmin ? 'Criando…' : 'Criar Usuário'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Alterar Senha Admin */}
+      {modalSenhaAdmin && (
+        <div style={s.overlay} onClick={() => setModalSenhaAdmin(null)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <p style={{ ...s.secaoTitulo, marginBottom: '1rem' }}>Alterar Senha — {modalSenhaAdmin.nome}</p>
+            {sucessoSenhaAdmin && <p style={{ color: colors.success, fontSize: '0.85rem', fontFamily: fonts.body }}>Senha alterada com sucesso.</p>}
+            <form onSubmit={handleSenhaAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div>
+                <label style={s.label}>Nova Senha (mín. 8 caracteres)</label>
+                <input type="password" value={novaSenhaAdmin} onChange={(e) => setNovaSenhaAdmin(e.target.value)} required minLength={8} style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              {erroSenhaAdmin && <p style={{ color: colors.error, fontSize: '0.8rem', margin: 0, fontFamily: fonts.body }}>{erroSenhaAdmin}</p>}
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setModalSenhaAdmin(null)} style={s.btnCancelar}>Cancelar</button>
+                <button type="submit" disabled={salvandoSenhaAdmin} style={{ ...s.btnAdicionar, opacity: salvandoSenhaAdmin ? 0.6 : 1 }}>
+                  {salvandoSenhaAdmin ? 'Salvando…' : 'Alterar Senha'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -242,4 +406,6 @@ const s: Record<string, React.CSSProperties> = {
   btnAdicionar: { padding: '0.4rem 1rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.sm, fontSize: '0.875rem', fontWeight: 600, cursor: 'pointer', fontFamily: fonts.title },
   btnSalvar: { padding: '0.35rem 0.75rem', backgroundColor: colors.accent, color: '#fff', border: 'none', borderRadius: radius.sm, fontSize: '0.8rem', cursor: 'pointer', fontFamily: fonts.body },
   btnCancelar: { padding: '0.35rem 0.75rem', backgroundColor: 'transparent', color: colors.textSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: '0.8rem', cursor: 'pointer', fontFamily: fonts.body },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
+  modal: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1.5rem', width: '100%', maxWidth: 420, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' },
 };

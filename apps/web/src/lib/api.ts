@@ -727,6 +727,80 @@ export async function excluirEntrega(id: string, token: string): Promise<void> {
 
 // ---- Campos de Imagem ----
 
+// ---- Usuários Admin ----
+
+export interface AdminUsuarioResponse {
+  id: string;
+  nome: string;
+  email: string;
+  criado_em?: string;
+  ativo?: boolean;
+  inativado_em?: string | null;
+}
+
+export async function listarAdmins(token: string): Promise<AdminUsuarioResponse[]> {
+  const res = await apiFetch(`${API_URL}/usuarios/admins`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao listar usuários admin');
+  }
+  return res.json();
+}
+
+export async function criarAdmin(
+  dados: { nome: string; email: string; senha: string },
+  token: string,
+): Promise<AdminUsuarioResponse> {
+  const res = await apiFetch(`${API_URL}/usuarios/admins`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dados),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao criar usuário admin');
+  }
+  return res.json();
+}
+
+export async function inativarAdmin(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/admins/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao inativar usuário');
+  }
+}
+
+export async function reativarAdmin(id: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/admins/${id}/reativar`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao reativar usuário');
+  }
+}
+
+export async function alterarSenhaAdmin(id: string, nova_senha: string, token: string): Promise<void> {
+  const res = await apiFetch(`${API_URL}/usuarios/admins/${id}/senha`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ nova_senha }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.mensagem ?? 'Erro ao alterar senha');
+  }
+}
+
+// ---- Campos de Imagem (continuação) ----
+
 export interface CampoImagemResponse {
   id: string;
   key: string;

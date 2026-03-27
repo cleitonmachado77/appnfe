@@ -28,6 +28,50 @@ export class UsuariosController {
     return this.usuariosService.buscarPorId(req.user.userId);
   }
 
+  // ---- Endpoints para usuários admin (antes das rotas :id) ----
+
+  @Post('admins')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.CREATED)
+  criarAdmin(@Body() dto: CriarUsuarioDto, @Request() req: any) {
+    return this.usuariosService.criarAdmin(dto, req.user.empresa_id);
+  }
+
+  @Get('admins')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.OK)
+  listarAdmins(@Request() req: any) {
+    return this.usuariosService.listarAdmins(req.user.empresa_id);
+  }
+
+  @Delete('admins/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  inativarAdmin(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.inativarAdmin(id, req.user.empresa_id);
+  }
+
+  @Patch('admins/:id/reativar')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reativarAdmin(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.reativarAdmin(id, req.user.empresa_id);
+  }
+
+  @Patch('admins/:id/senha')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  alterarSenhaAdmin(@Param('id') id: string, @Body() dto: AlterarSenhaDto, @Request() req: any) {
+    return this.usuariosService.alterarSenhaAdmin(id, dto.nova_senha, req.user.empresa_id);
+  }
+
+  // ---- Endpoints para entregadores ----
+
   @Post()
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'SUPER_ADMIN')

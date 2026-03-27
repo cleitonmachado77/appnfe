@@ -104,6 +104,60 @@ export class UsuariosService {
     return { entregas_pendentes, transferencias_pendentes };
   }
 
+  // ---- Usuários Admin ----
+
+  async criarAdmin(dto: CriarUsuarioDto, empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>> {
+    const existente = await this.usuariosRepository.findOne({ where: { email: dto.email } });
+    if (existente) throw new ConflictException('Email já está em uso');
+
+    const senha_hash = await bcrypt.hash(dto.senha, 10);
+    const usuario = this.usuariosRepository.create({
+      nome: dto.nome,
+      email: dto.email,
+      senha_hash,
+      tipo: PerfilUsuario.ADMIN,
+      empresa_id: empresa_id ?? null,
+    });
+
+    const salvo = await this.usuariosRepository.save(usuario);
+    const { senha_hash: _, ...resultado } = salvo;
+    return resultado;
+  }
+
+  async listarAdmins(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
+    const where: any = { tipo: PerfilUsuario.ADMIN };
+    if (empresa_id) where.empresa_id = empresa_id;
+
+    const usuarios = await this.usuariosRepository.find({ where, order: { ativo: 'DESC', criado_em: 'DESC' } });
+    return usuarios.map(({ senha_hash: _, ...u }) => u);
+  }
+
+  async inativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    await this.usuariosRepository.update(id, { ativo: false, inativado_em: new Date() });
+  }
+
+  async reativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    if (usuario.ativo) throw new BadRequestException('Usuário já está ativo');
+    await this.usuariosRepository.update(id, { ativo: true, inativado_em: null });
+  }
+
+  async alterarSenhaAdmin(id: string, novaSenha: string, empresa_id?: string | null): Promise<void> {
+    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    if (empresa_id) where.empresa_id = empresa_id;
+    const usuario = await this.usuariosRepository.findOne({ where });
+    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    const senha_hash = await bcrypt.hash(novaSenha, 10);
+    await this.usuariosRepository.update(id, { senha_hash });
+  }
+
   async migrar(origemId: string, destinoId: string, empresa_id?: string | null): Promise<{ entregas_migradas: number; transferencias_migradas: number }> {
     const whereOrigem: any = { id: origemId, tipo: PerfilUsuario.ENTREGADOR };
     if (empresa_id) whereOrigem.empresa_id = empresa_id;
