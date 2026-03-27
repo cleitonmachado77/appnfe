@@ -136,16 +136,20 @@ export class UsuariosService {
   }
 
   async inativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.USUARIO };
-    if (empresa_id) where.empresa_id = empresa_id;
+    const where: any = [
+      { id, tipo: PerfilUsuario.USUARIO, ...(empresa_id ? { empresa_id } : {}) },
+      { id, tipo: PerfilUsuario.ADMIN, ...(empresa_id ? { empresa_id } : {}) },
+    ];
     const usuario = await this.usuariosRepository.findOne({ where });
     if (!usuario) throw new NotFoundException('Usuário não encontrado');
     await this.usuariosRepository.update(id, { ativo: false, inativado_em: new Date() });
   }
 
   async reativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.USUARIO };
-    if (empresa_id) where.empresa_id = empresa_id;
+    const where: any = [
+      { id, tipo: PerfilUsuario.USUARIO, ...(empresa_id ? { empresa_id } : {}) },
+      { id, tipo: PerfilUsuario.ADMIN, ...(empresa_id ? { empresa_id } : {}) },
+    ];
     const usuario = await this.usuariosRepository.findOne({ where });
     if (!usuario) throw new NotFoundException('Usuário não encontrado');
     if (usuario.ativo) throw new BadRequestException('Usuário já está ativo');
@@ -153,8 +157,10 @@ export class UsuariosService {
   }
 
   async alterarSenhaAdmin(id: string, novaSenha: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.USUARIO };
-    if (empresa_id) where.empresa_id = empresa_id;
+    const where: any = [
+      { id, tipo: PerfilUsuario.USUARIO, ...(empresa_id ? { empresa_id } : {}) },
+      { id, tipo: PerfilUsuario.ADMIN, ...(empresa_id ? { empresa_id } : {}) },
+    ];
     const usuario = await this.usuariosRepository.findOne({ where });
     if (!usuario) throw new NotFoundException('Usuário não encontrado');
     const senha_hash = await bcrypt.hash(novaSenha, 10);
