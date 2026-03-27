@@ -36,8 +36,15 @@ export default function DetalheEntregaPage() {
     } finally { setConferindo(false); }
   }
 
+  // Detecta campos já vazios no servidor (ex: após reload) além dos limpos na sessão
+  const chaveVazia = !entrega?.chave_nfe?.trim();
+  const localizacaoVazia = Number(entrega?.latitude) === 0 && Number(entrega?.longitude) === 0;
+  const imagensObrigatorias = camposImagem.filter((c) => c.ativo && c.obrigatorio);
+  const imagensPresentes = new Set((entrega?.imagens ?? []).map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean));
+  const faltaImagem = imagensObrigatorias.some((c) => !imagensPresentes.has(c.key)) || camposLimpos.imagem;
+
   const podeReativar = entrega?.status !== 'PENDENTE' &&
-    (camposLimpos.chave_nfe || camposLimpos.localizacao || camposLimpos.imagem);
+    (camposLimpos.chave_nfe || camposLimpos.localizacao || faltaImagem || chaveVazia || localizacaoVazia);
 
   async function handleLimparCampo(campo: 'chave_nfe' | 'localizacao') {
     if (!confirm(`Limpar ${campo === 'chave_nfe' ? 'a Chave NF-e' : 'a localização'}? O entregador precisará preencher novamente.`)) return;
@@ -170,12 +177,12 @@ export default function DetalheEntregaPage() {
           <Campo label="Código" valor={entrega.codigo ?? '—'} mono />
           <CampoExcluivel
             label="Chave NF-e"
-            valor={entrega.chave_nfe || '—'}
+            valor={entrega.chave_nfe?.trim() || '—'}
             mono
             excluido={camposLimpos.chave_nfe}
             excluindo={limpando === 'chave_nfe'}
             onExcluir={() => handleLimparCampo('chave_nfe')}
-            podeExcluir={entrega.status !== 'PENDENTE' && !!entrega.chave_nfe && !camposLimpos.chave_nfe}
+            podeExcluir={entrega.status !== 'PENDENTE' && !!entrega.chave_nfe?.trim() && !camposLimpos.chave_nfe}
           />
           <Campo label="Entregador" valor={entrega.entregador_nome} />
           <Campo label="Data/Hora" valor={new Date(entrega.data_hora).toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'medium' })} />
@@ -190,7 +197,7 @@ export default function DetalheEntregaPage() {
             excluido={camposLimpos.localizacao}
             excluindo={limpando === 'localizacao'}
             onExcluir={() => handleLimparCampo('localizacao')}
-            podeExcluir={entrega.status !== 'PENDENTE' && (Number(entrega.latitude) !== 0 || Number(entrega.longitude) !== 0) && !camposLimpos.localizacao}
+            podeExcluir={entrega.status !== 'PENDENTE' && !camposLimpos.localizacao}
           />
           <Campo label="Longitude" valor={Number(entrega.longitude).toFixed(6)} mono />
         </div>
