@@ -41,7 +41,7 @@ export default function MinhaContaPage() {
   const [editAtivo, setEditAtivo] = useState(true);
 
   // usuários admin
-  const [admins, setAdmins] = useState<AdminUsuarioResponse[]>([]);
+  const [admins, setAdmins] = useState<AdminUsuarioResponse[] | null>(null);
   const [modalAdmin, setModalAdmin] = useState(false);
   const [adminNome, setAdminNome] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -64,7 +64,7 @@ export default function MinhaContaPage() {
       .then((data) => setConta(data as ContaInfo))
       .finally(() => setCarregando(false));
     listarCamposImagem(token).then(setCampos).catch(() => {});
-    listarAdmins(token).then(setAdmins).catch(() => {});
+    listarAdmins(token).then(setAdmins).catch((err) => { console.error('Erro ao listar admins:', err); setAdmins([]); });
   }, [router]);
 
   async function handleCriar(e: React.FormEvent) {
@@ -138,10 +138,10 @@ export default function MinhaContaPage() {
     try {
       if (acao === 'inativar') {
         await inativarAdmin(u.id, token);
-        setAdmins((prev) => prev.map((a) => a.id === u.id ? { ...a, ativo: false, inativado_em: new Date().toISOString() } : a));
+        setAdmins((prev) => (prev ?? []).map((a) => a.id === u.id ? { ...a, ativo: false, inativado_em: new Date().toISOString() } : a));
       } else {
         await reativarAdmin(u.id, token);
-        setAdmins((prev) => prev.map((a) => a.id === u.id ? { ...a, ativo: true, inativado_em: null } : a));
+        setAdmins((prev) => (prev ?? []).map((a) => a.id === u.id ? { ...a, ativo: true, inativado_em: null } : a));
       }
     } catch (err) {
       setErroAdmin(err instanceof Error ? err.message : `Erro ao ${acao}`);
@@ -291,7 +291,9 @@ export default function MinhaContaPage() {
 
         {erroAdmin && <p style={{ color: colors.error, fontSize: '0.8rem', marginBottom: '0.75rem', fontFamily: fonts.body }}>{erroAdmin}</p>}
 
-        {admins.length === 0 ? (
+        {admins === null ? (
+          <p style={{ fontSize: '0.85rem', color: colors.textMuted, fontFamily: fonts.body }}>Carregando usuários…</p>
+        ) : admins.filter((a) => a.id !== conta.id).length === 0 ? (
           <p style={{ fontSize: '0.85rem', color: colors.textMuted, fontFamily: fonts.body }}>Nenhum usuário adicional cadastrado.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

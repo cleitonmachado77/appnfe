@@ -126,8 +126,10 @@ export class UsuariosService {
   }
 
   async listarAdmins(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
-    const where: any = { tipo: PerfilUsuario.USUARIO };
-    if (empresa_id) where.empresa_id = empresa_id;
+    const where: any = [
+      { tipo: PerfilUsuario.USUARIO, ...(empresa_id ? { empresa_id } : {}) },
+      { tipo: PerfilUsuario.ADMIN, ...(empresa_id ? { empresa_id } : {}) },
+    ];
 
     const usuarios = await this.usuariosRepository.find({ where, order: { ativo: 'DESC', criado_em: 'DESC' } });
     return usuarios.map(({ senha_hash: _, ...u }) => u);
