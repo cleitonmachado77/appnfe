@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 
 import { AuthContext, AuthState, loadAuth, saveAuth, clearAuth } from './src/hooks/useAuth';
+import { BadgesContext } from './src/hooks/useBadges';
 import { sincronizarEntregasPendentes } from './src/db/sync';
 import {
   apiListarPendentes, apiContarNaoLidas,
@@ -22,7 +23,7 @@ import NotificacoesScreen from './src/screens/NotificacoesScreen';
 import PerfilScreen from './src/screens/PerfilScreen';
 
 const Tab = createBottomTabNavigator();
-const POLL_INTERVAL = 10_000; // 10 segundos
+const POLL_INTERVAL = 10_000;
 
 export default function App() {
   const [auth, setAuth] = useState<AuthState>({
@@ -30,8 +31,6 @@ export default function App() {
   });
   const [loading, setLoading] = useState(true);
   const syncingRef = useRef(false);
-
-  // Contadores para badges
   const [pendentesCount, setPendentesCount] = useState(0);
   const [naoLidasCount, setNaoLidasCount] = useState(0);
   const skipNotifPollRef = useRef(false);
@@ -40,12 +39,10 @@ export default function App() {
     loadAuth().then((state) => { setAuth(state); setLoading(false); });
   }, []);
 
-  // Polling: atualiza contadores e dados a cada 10s quando online
   const atualizarDados = useCallback(async () => {
     if (!auth.token) return;
     const netState = await NetInfo.fetch();
     if (!netState.isConnected || !netState.isInternetReachable) return;
-
     try {
       const [pendentes, recebidas, naoLidas] = await Promise.all([
         apiListarPendentes(auth.token).catch(() => []),
@@ -58,13 +55,16 @@ export default function App() {
       } else {
         skipNotifPollRef.current = false;
       }
-      // Atualiza cache
       if (pendentes.length > 0) await cachearEntregas(pendentes).catch(() => {});
-      // Atualiza campos imagem
       const campos = await apiListarCamposImagem(auth.token).catch(() => null);
       if (campos) await cachearCamposImagem(campos).catch(() => {});
     } catch { /* ignore */ }
   }, [auth.token]);
+
+  // Refresh instantâneo — chamado pelas telas após ações
+  const refreshBadges = useCallback(() => {
+    atualizarDados();
+  }, [atualizarDados]);
 
   useEffect(() => {
     if (!auth.isLoggedIn) return;
@@ -73,7 +73,6 @@ export default function App() {
     return () => clearInterval(interval);
   }, [auth.isLoggedIn, atualizarDados]);
 
-  // Sincronização automática quando volta online
   const syncPendentes = useCallback(async () => {
     if (syncingRef.current || !auth.token) return;
     syncingRef.current = true;
@@ -112,8 +111,7 @@ export default function App() {
     logout: async () => {
       await clearAuth();
       setAuth({ token: null, perfil: null, nome: null, isLoggedIn: false });
-      setPendentesCount(0);
-      setNaoLidasCount(0);
+      setPendentesCount(0); setNaoLidasCount(0);
     },
   };
 
@@ -122,59 +120,51 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <AuthContext.Provider value={authContext}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.bgPrimary} />
-        <NavigationContainer>
-          {!auth.isLoggedIn ? (
-            <LoginScreen />
-          ) : (
-            <Tab.Navigator
-              screenOptions={{
-                headerStyle: { backgroundColor: colors.bgCard },
-                headerTintColor: colors.textPrimary,
-                tabBarStyle: { backgroundColor: colors.bgCard, borderTopColor: colors.border },
-                tabBarActiveTintColor: colors.accent,
-                tabBarInactiveTintColor: colors.textMuted,
-              }}
-            >
-              <Tab.Screen name="Nova" component={NovaEntregaScreen}
-                options={{
-                  title: 'Nova Entrega',
-                  tabBarIcon: () => <TabIcon emoji="📦" />,
-                }} />
-              <Tab.Screen name="Pendentes" component={PendentesScreen}
-                options={{
-                  title: 'Pendentes',
-                  tabBarIcon: () => <TabIcon emoji="📋" badge={pendentesCount} />,
-                  tabBarBadge: pendentesCount > 0 ? pendentesCount : undefined,
-                  tabBarBadgeStyle: bs.badge,
-                }} />
-              <Tab.Screen name="Notificacoes" component={NotificacoesScreen}
-                listeners={{ tabPress: () => { setNaoLidasCount(0); skipNotifPollRef.current = true; } }}
-                options={{
-                  title: 'Notificações',
-                  tabBarIcon: () => <TabIcon emoji="🔔" badge={naoLidasCount} />,
-                  tabBarBadge: naoLidasCount > 0 ? naoLidasCount : undefined,
-                  tabBarBadgeStyle: bs.badge,
-                }} />
-              <Tab.Screen name="Perfil" component={PerfilScreen}
-                options={{
-                  title: 'Perfil',
-                  tabBarIcon: () => <TabIcon emoji="👤" />,
-                }} />
-            </Tab.Navigator>
-          )}
-        </NavigationContainer>
+        <BadgesContext.Provider value={{ refreshBadges }}>
+          <StatusBar barStyle="light-content" backgroundColor={colors.bgPrimary} />
+          <NavigationContainer>
+            {!auth.isLoggedIn ? (
+              <LoginScreen />
+            ) : (
+              <Tab.Navigator
+                screenOptions={{
+                  headerStyle: { backgroundColor: colors.bgCard },
+                  headerTintColor: colors.textPrimary,
+                  tabBarStyle: { backgroundColor: colors.bgCard, borderTopColor: colors.border },
+                  tabBarActiveTintColor: colors.accent,
+                  tabBarInactiveTintColor: colors.textMuted,
+                }}
+              >
+                <Tab.Screen name="Nova" component={NovaEntregaScreen}
+                  options={{ title: 'Nova Entrega', tabBarIcon: () => <TabIcon emoji="📦" /> }} />
+                <Tab.Screen name="Pendentes" component={PendentesScreen}
+                  options={{
+                    title: 'Pendentes',
+                    tabBarIcon: () => <TabIcon emoji="📋" />,
+                    tabBarBadge: pendentesCount > 0 ? pendentesCount : undefined,
+                    tabBarBadgeStyle: bs.badge,
+                  }} />
+                <Tab.Screen name="Notificacoes" component={NotificacoesScreen}
+                  listeners={{ tabPress: () => { setNaoLidasCount(0); skipNotifPollRef.current = true; } }}
+                  options={{
+                    title: 'Notificações',
+                    tabBarIcon: () => <TabIcon emoji="🔔" />,
+                    tabBarBadge: naoLidasCount > 0 ? naoLidasCount : undefined,
+                    tabBarBadgeStyle: bs.badge,
+                  }} />
+                <Tab.Screen name="Perfil" component={PerfilScreen}
+                  options={{ title: 'Perfil', tabBarIcon: () => <TabIcon emoji="👤" /> }} />
+              </Tab.Navigator>
+            )}
+          </NavigationContainer>
+        </BadgesContext.Provider>
       </AuthContext.Provider>
     </SafeAreaProvider>
   );
 }
 
-function TabIcon({ emoji, badge }: { emoji: string; badge?: number }) {
-  return (
-    <View>
-      <Text style={{ fontSize: 20 }}>{emoji}</Text>
-    </View>
-  );
+function TabIcon({ emoji }: { emoji: string }) {
+  return <Text style={{ fontSize: 20 }}>{emoji}</Text>;
 }
 
 const bs = StyleSheet.create({

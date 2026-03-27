@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView, RefreshControl,
   StyleSheet, Alert,
@@ -7,6 +7,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { colors } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { useNetwork } from '../hooks/useNetwork';
+import { useBadges } from '../hooks/useBadges';
 import {
   apiListarPendentes, apiExcluirPendente, apiFinalizarEntrega,
   apiListarCamposImagem,
@@ -16,7 +17,7 @@ import {
 } from '../api/client';
 import {
   listarEntregasOffline, excluirEntregaOffline,
-  obterEntregasCache, cachearEntregas,
+  obterEntregasCache, cachearEntregas, invalidarCacheEntrega,
   obterCamposImagemCache, cachearCamposImagem,
   type EntregaOffline,
 } from '../db/sync';
@@ -27,6 +28,7 @@ import TransferirScreen from './TransferirScreen';
 export default function PendentesScreen() {
   const { token } = useAuth();
   const { isOnline } = useNetwork();
+  const { refreshBadges } = useBadges();
   const [pendentes, setPendentes] = useState<EntregaResponse[]>([]);
   const [offlineEntregas, setOfflineEntregas] = useState<EntregaOffline[]>([]);
   const [recebidas, setRecebidas] = useState<TransferenciaResponse[]>([]);
@@ -39,9 +41,12 @@ export default function PendentesScreen() {
   const [selecionada, setSelecionada] = useState<EntregaResponse | null>(null);
   const [transferindo, setTransferindo] = useState<EntregaResponse | null>(null);
   const isFocused = useIsFocused();
+  const camposRef = useRef<CampoImagemResponse[]>([]);
 
   const carregar = useCallback(async () => {
     if (!token) return;
+
+    // Sempre carrega entregas offline do SQLite
     const offline = await listarEntregasOffline();
     setOfflineEntregas(offline.filter((e) => !e.sincronizado));
 
@@ -49,15 +54,31 @@ export default function PendentesScreen() {
     if (isOnline) {
       try {
         const c = await apiListarCamposImagem(token);
-        setCampos(c); await cachearCamposImagem(c);
-      } catch { /* fallback */ }
+        setCampos(c);
+        camposRef.current = c;
+        await cachearCamposImagem(c);
+      } catch {
+        // fallback para cache
+        const cached = await obterCamposImagemCache();
+        if (cached.length > 0 && camposRef.current.length === 0) {
+          setCampos(cached);
+          camposRef.current = cached;
+        }
+      }
+    } else {
+      const cached = await obterCamposImagemCache();
+      if (cached.length > 0) {
+        setCampos(cached);
+        camposRef.current = cached;
+      }
     }
-    const cached = await obterCamposImagemCache();
-    if (cached.length > 0 && campos.length === 0) setCampos(cached);
 
     if (isOnline) {
       try {
-        const p = await apiListarPendentes(token); setPendentes(p); await cachearEntregas(p);
+        const p = await apiListarPendentes(token);
+        setPendentes(p);
+        // Atualiza cache com dados frescos (limpa cache antigo)
+        await cachearEntregas(p);
         setRecebidas(await apiListarTransferenciasRecebidas(token));
         setEnviadas(await apiListarTransferenciasEnviadas(token));
       } catch {
@@ -75,12 +96,13 @@ export default function PendentesScreen() {
   // Recarrega quando a aba ganha foco
   useEffect(() => { if (isFocused) carregar(); }, [isFocused]);
 
-  // Polling a cada 10s enquanto focado
+  // Polling a cada 10s enquanto focado e online
   useEffect(() => {
     if (!isFocused || !isOnline) return;
     const interval = setInterval(carregar, 10_000);
     return () => clearInterval(interval);
   }, [isFocused, isOnline, carregar]);
+
   async function onRefresh() { setRefreshing(true); await carregar(); setRefreshing(false); }
 
   async function handleExcluirOnline(e: EntregaResponse) {
@@ -89,7 +111,12 @@ export default function PendentesScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Excluir', style: 'destructive', onPress: async () => {
         setExcluindo(e.id);
-        try { await apiExcluirPendente(e.id, token); await carregar(); }
+        try {
+          await apiExcluirPendente(e.id, token);
+          setPendentes((prev) => prev.filter((p) => p.id !== e.id));
+          await invalidarCacheEntrega(e.id);
+          refreshBadges();
+        }
         catch { Alert.alert('Erro', 'Não foi possível excluir'); }
         finally { setExcluindo(null); }
       }},
@@ -100,7 +127,9 @@ export default function PendentesScreen() {
     Alert.alert('Excluir', 'Excluir esta entrega offline?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Excluir', style: 'destructive', onPress: async () => {
-        await excluirEntregaOffline(localId); await carregar();
+        await excluirEntregaOffline(localId);
+        setOfflineEntregas((prev) => prev.filter((e) => e.local_id !== localId));
+        refreshBadges();
       }},
     ]);
   }
@@ -116,7 +145,9 @@ export default function PendentesScreen() {
             imagens: [], latitude: Number(e.latitude) || 0,
             longitude: Number(e.longitude) || 0, parcial: true,
           }, token);
-          await carregar();
+          setPendentes((prev) => prev.filter((p) => p.id !== e.id));
+          await invalidarCacheEntrega(e.id);
+          refreshBadges();
         } catch { Alert.alert('Erro', 'Não foi possível enviar'); }
         finally { setEnviandoParcial(null); }
       }},
@@ -126,14 +157,22 @@ export default function PendentesScreen() {
   async function handleResponder(id: string, acao: 'aceitar' | 'recusar') {
     if (!token || !isOnline) { Alert.alert('Sem conexão', 'Precisa estar online.'); return; }
     setRespondendo(id);
-    try { await apiResponderTransferencia(id, acao, token); await carregar(); }
+    try {
+      await apiResponderTransferencia(id, acao, token);
+      setRecebidas((prev) => prev.filter((t) => t.id !== id));
+      if (acao === 'aceitar') { await carregar(); refreshBadges(); }
+    }
     catch { Alert.alert('Erro', `Não foi possível ${acao}`); }
     finally { setRespondendo(null); }
   }
 
   async function handleCancelarEnviada(id: string) {
     if (!token || !isOnline) return;
-    try { await apiResponderTransferencia(id, 'cancelar', token); await carregar(); }
+    try {
+      await apiResponderTransferencia(id, 'cancelar', token);
+      setEnviadas((prev) => prev.filter((t) => t.id !== id));
+      refreshBadges();
+    }
     catch { Alert.alert('Erro', 'Não foi possível cancelar'); }
   }
 
@@ -246,22 +285,18 @@ export default function PendentesScreen() {
                   )}
                 </View>
                 <View style={{ gap: 6 }}>
-                  {/* Retomar — sempre visível */}
                   <TouchableOpacity style={[s.btnRetomar, emTransf && s.btnDisabled]}
                     onPress={() => setSelecionada(e)} disabled={emTransf}>
                     <Text style={s.btnRetomarText}>Retomar →</Text>
                   </TouchableOpacity>
-                  {/* Transferir — só online */}
                   <TouchableOpacity style={[s.btnTransferir, (emTransf || !isOnline) && s.btnDisabled]}
                     onPress={() => setTransferindo(e)} disabled={emTransf || !isOnline}>
                     <Text style={s.btnTransferirText}>Transferir</Text>
                   </TouchableOpacity>
-                  {/* Parcial — só online */}
                   <TouchableOpacity style={[s.btnParcial, (enviandoParcial === e.id || emTransf || !isOnline) && s.btnDisabled]}
                     onPress={() => handleEnviarParcial(e)} disabled={enviandoParcial === e.id || emTransf || !isOnline}>
                     <Text style={s.btnParcialText}>{enviandoParcial === e.id ? '…' : 'Parcial'}</Text>
                   </TouchableOpacity>
-                  {/* Excluir — NÃO aparece se entrega foi reativada */}
                   {!e.comentario_reativacao && (
                     <TouchableOpacity style={[s.btnExcluir, (excluindo === e.id || emTransf || !isOnline) && s.btnDisabled]}
                       onPress={() => handleExcluirOnline(e)} disabled={excluindo === e.id || emTransf || !isOnline}>

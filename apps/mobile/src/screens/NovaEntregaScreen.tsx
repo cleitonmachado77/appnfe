@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { useNetwork } from '../hooks/useNetwork';
+import { useBadges } from '../hooks/useBadges';
 import {
   apiUploadImagem, apiCriarEntrega, apiListarCamposImagem,
   type CampoImagemResponse,
@@ -23,39 +25,52 @@ const CAMPOS_SEM_AUSENCIA = new Set(['CANHOTO', 'LOCAL']);
 export default function NovaEntregaScreen() {
   const { token } = useAuth();
   const { isOnline } = useNetwork();
+  const { refreshBadges } = useBadges();
   const [campos, setCampos] = useState<CampoImagemResponse[]>([]);
   const [chaveNfe, setChaveNfe] = useState('');
   const [imagens, setImagens] = useState<Record<string, string | null>>({});
   const [ausentes, setAusentes] = useState<Record<string, boolean>>({});
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
+  const [obtendoLoc, setObtendoLoc] = useState(false);
   const [estado, setEstado] = useState<'idle' | 'enviando' | 'sucesso' | 'erro'>('idle');
   const [erro, setErro] = useState('');
 
-  useEffect(() => { carregarCampos(); }, [token, isOnline]);
+  // Carrega campos toda vez que a tela ganha foco — sem memoização
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        if (isOnline && token) {
+          try {
+            const c = await apiListarCamposImagem(token);
+            if (active) { setCampos(c); await cachearCamposImagem(c); }
+            return;
+          } catch { /* fallback */ }
+        }
+        const cached = await obterCamposImagemCache();
+        if (active && cached.length > 0) { setCampos(cached); return; }
+        if (active) setCampos([
+          { id: 'c', key: 'CANHOTO', label: 'Foto do Canhoto', obrigatorio: true, ordem: 0, ativo: true },
+          { id: 'l', key: 'LOCAL', label: 'Foto do Local de Entrega', obrigatorio: true, ordem: 1, ativo: true },
+        ]);
+      })();
+      return () => { active = false; };
+    }, [token, isOnline])
+  );
 
-  async function carregarCampos() {
-    // Sempre tenta carregar do cache primeiro (rápido)
-    const cached = await obterCamposImagemCache();
-    if (cached.length > 0) setCampos(cached);
-
-    // Se online, busca da API e atualiza cache
-    if (isOnline && token) {
+  // Também recarrega via intervalo enquanto online
+  useEffect(() => {
+    if (!isOnline || !token) return;
+    const id = setInterval(async () => {
       try {
         const c = await apiListarCamposImagem(token);
         setCampos(c);
         await cachearCamposImagem(c);
-      } catch { /* mantém cache */ }
-    }
-
-    // Fallback se não tem cache nem API
-    if (cached.length === 0 && campos.length === 0) {
-      setCampos([
-        { id: 'c', key: 'CANHOTO', label: 'Foto do Canhoto', obrigatorio: true, ordem: 0, ativo: true },
-        { id: 'l', key: 'LOCAL', label: 'Foto do Local de Entrega', obrigatorio: true, ordem: 1, ativo: true },
-      ]);
-    }
-  }
+      } catch { /* ignore */ }
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [isOnline, token]);
 
   async function capturarFoto(campoKey: string) {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -78,11 +93,13 @@ export default function NovaEntregaScreen() {
       Alert.alert('Permissão necessária', 'Habilite o acesso à localização.');
       return;
     }
+    setObtendoLoc(true);
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setLatitude(loc.coords.latitude);
       setLongitude(loc.coords.longitude);
     } catch { Alert.alert('Erro', 'Não foi possível obter a localização.'); }
+    finally { setObtendoLoc(false); }
   }
 
   function limpar() {
@@ -114,7 +131,11 @@ export default function NovaEntregaScreen() {
           'PENDENTE', imagensParaEnviar,
           camposAusentesKeys.length ? camposAusentesKeys : undefined);
         setEstado('sucesso');
-      } catch { setErro('Erro ao salvar localmente'); setEstado('erro'); }
+      } catch (err) {
+        console.warn('Erro ao salvar offline:', err);
+        setErro(err instanceof Error ? err.message : 'Erro ao salvar localmente. Tente novamente.');
+        setEstado('erro');
+      }
       return;
     }
 
@@ -133,15 +154,25 @@ export default function NovaEntregaScreen() {
         campos_ausentes: camposAusentesKeys.length ? camposAusentesKeys : undefined,
       }, token);
       setEstado('sucesso');
-    } catch {
+      refreshBadges();
+    } catch (apiErr) {
       // Falhou online? Salva offline como fallback
+      console.warn('Falha ao enviar online, salvando offline:', apiErr);
       try {
         await salvarEntregaOffline(chaveNfe, latitude ?? 0, longitude ?? 0,
           salvarPendente ? 'PENDENTE' : 'ENVIADO', imagensParaEnviar,
           camposAusentesKeys.length ? camposAusentesKeys : undefined);
         Alert.alert('Salvo offline', 'Será sincronizado quando a conexão voltar.');
         setEstado('sucesso');
-      } catch { setErro('Erro ao enviar e ao salvar offline'); setEstado('erro'); }
+      } catch (offlineErr) {
+        console.warn('Erro ao salvar offline:', offlineErr);
+        setErro(
+          apiErr instanceof Error
+            ? `Falha no envio: ${apiErr.message}. Também não foi possível salvar offline.`
+            : 'Erro ao enviar e ao salvar offline',
+        );
+        setEstado('erro');
+      }
     }
   }
 
@@ -208,9 +239,18 @@ export default function NovaEntregaScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity style={s.captureBtn} onPress={capturarLocalizacao}>
-            <Text style={{ fontSize: 28 }}>📍</Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>Capturar localização</Text>
+          <TouchableOpacity style={[s.captureBtn, obtendoLoc && s.captureBtnLoading]} onPress={capturarLocalizacao} disabled={obtendoLoc}>
+            {obtendoLoc ? (
+              <>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={{ fontSize: 14, color: colors.textSecondary }}>Obtendo localização…</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 28 }}>📍</Text>
+                <Text style={{ fontSize: 14, color: colors.textSecondary }}>Capturar localização</Text>
+              </>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -257,6 +297,9 @@ const s = StyleSheet.create({
   captureBtn: {
     backgroundColor: colors.bgSecondary, borderRadius: 10, padding: 24,
     alignItems: 'center', gap: 8, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
+  },
+  captureBtnLoading: {
+    borderColor: colors.accent, borderStyle: 'solid',
   },
   preview: { width: '100%', height: 200, borderRadius: 10 },
   ausenteRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

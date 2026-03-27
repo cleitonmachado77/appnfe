@@ -8,10 +8,12 @@ import * as Location from 'expo-location';
 import { colors } from '../constants';
 import { useAuth } from '../hooks/useAuth';
 import { useNetwork } from '../hooks/useNetwork';
+import { useBadges } from '../hooks/useBadges';
 import {
   apiUploadImagem, apiFinalizarEntrega,
   type EntregaResponse, type CampoImagemResponse,
 } from '../api/client';
+import { salvarEntregaOffline } from '../db/sync';
 
 const CAMPOS_SEM_AUSENCIA = new Set(['CANHOTO', 'LOCAL']);
 
@@ -25,6 +27,7 @@ interface Props {
 export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFinalizado }: Props) {
   const { token } = useAuth();
   const { isOnline } = useNetwork();
+  const { refreshBadges } = useBadges();
 
   const jaEnviadas = new Set<string>(
     entrega.imagens.map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean),
@@ -44,6 +47,7 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
   });
   const [latitude, setLatitude] = useState<number | null>(temLocalizacao ? Number(entrega.latitude) : null);
   const [longitude, setLongitude] = useState<number | null>(temLocalizacao ? Number(entrega.longitude) : null);
+  const [obtendoLoc, setObtendoLoc] = useState(false);
   const [estado, setEstado] = useState<'idle' | 'enviando' | 'sucesso' | 'erro'>('idle');
   const [erro, setErro] = useState('');
 
@@ -72,28 +76,53 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
       Alert.alert('Permissão necessária', 'Habilite o acesso à localização.');
       return;
     }
+    setObtendoLoc(true);
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       setLatitude(loc.coords.latitude);
       setLongitude(loc.coords.longitude);
     } catch { Alert.alert('Erro', 'Não foi possível obter a localização.'); }
+    finally { setObtendoLoc(false); }
   }
 
   async function handleFinalizar() {
-    if (!token || !isOnline) {
-      Alert.alert('Sem conexão', 'Você precisa estar online para finalizar.');
+    if (!token) return;
+    setEstado('enviando'); setErro('');
+
+    const camposComImg = camposFaltando.filter((c) => imagens[c.key]);
+    const camposAusentesKeys = Object.entries(ausentes).filter(([, v]) => v).map(([k]) => k);
+
+    // OFFLINE: salva localmente para sincronizar depois
+    if (!isOnline) {
+      try {
+        const imagensParaOffline = camposComImg.map((c) => ({
+          campo_key: c.key,
+          file_uri: imagens[c.key]!,
+        }));
+        await salvarEntregaOffline(
+          entrega.chave_nfe,
+          latitude!,
+          longitude!,
+          'PENDENTE',
+          imagensParaOffline,
+          camposAusentesKeys.length ? camposAusentesKeys : undefined,
+        );
+        setEstado('sucesso');
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : 'Erro ao salvar offline.');
+        setEstado('erro');
+      }
       return;
     }
-    setEstado('enviando'); setErro('');
+
+    // ONLINE: envia direto
     try {
-      const camposComImg = camposFaltando.filter((c) => imagens[c.key]);
       const uploads = await Promise.all(
         camposComImg.map(async (c) => {
           const result = await apiUploadImagem(imagens[c.key]!, token);
           return { url_arquivo: result.url_arquivo, tipo: c.key };
         }),
       );
-      const camposAusentesKeys = Object.entries(ausentes).filter(([, v]) => v).map(([k]) => k);
       await apiFinalizarEntrega(entrega.id, {
         imagens: uploads,
         latitude: latitude!,
@@ -101,9 +130,27 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
         campos_ausentes: camposAusentesKeys.length ? camposAusentesKeys : undefined,
       }, token);
       setEstado('sucesso');
+      refreshBadges();
     } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Erro ao finalizar.');
-      setEstado('erro');
+      // Fallback: tenta salvar offline
+      try {
+        const imagensParaOffline = camposComImg.map((c) => ({
+          campo_key: c.key,
+          file_uri: imagens[c.key]!,
+        }));
+        await salvarEntregaOffline(
+          entrega.chave_nfe,
+          latitude!,
+          longitude!,
+          'PENDENTE',
+          imagensParaOffline,
+          camposAusentesKeys.length ? camposAusentesKeys : undefined,
+        );
+        setEstado('sucesso');
+      } catch {
+        setErro(err instanceof Error ? err.message : 'Erro ao finalizar.');
+        setEstado('erro');
+      }
     }
   }
 
@@ -111,8 +158,10 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
     <View style={s.container}>
       <View style={s.sucessoCard}>
         <Text style={s.sucessoIcone}>✓</Text>
-        <Text style={s.sucessoTitulo}>Entrega finalizada!</Text>
-        <Text style={s.sucessoDesc}>Comprovante enviado com sucesso.</Text>
+        <Text style={s.sucessoTitulo}>{isOnline ? 'Entrega finalizada!' : 'Salvo offline!'}</Text>
+        <Text style={s.sucessoDesc}>
+          {isOnline ? 'Comprovante enviado com sucesso.' : 'Será sincronizado quando a conexão voltar.'}
+        </Text>
         <TouchableOpacity style={s.btn} onPress={onFinalizado}>
           <Text style={s.btnText}>Voltar às pendentes</Text>
         </TouchableOpacity>
@@ -185,9 +234,18 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity style={s.captureBtn} onPress={capturarLocalizacao}>
-            <Text style={{ fontSize: 28 }}>📍</Text>
-            <Text style={{ fontSize: 14, color: colors.textSecondary }}>Capturar localização</Text>
+          <TouchableOpacity style={[s.captureBtn, obtendoLoc && s.captureBtnLoading]} onPress={capturarLocalizacao} disabled={obtendoLoc}>
+            {obtendoLoc ? (
+              <>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={{ fontSize: 14, color: colors.textSecondary }}>Obtendo localização…</Text>
+              </>
+            ) : (
+              <>
+                <Text style={{ fontSize: 28 }}>📍</Text>
+                <Text style={{ fontSize: 14, color: colors.textSecondary }}>Capturar localização</Text>
+              </>
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -197,15 +255,15 @@ export default function FinalizarEntregaScreen({ entrega, campos, onVoltar, onFi
       )}
 
       <TouchableOpacity
-        style={[s.btn, (!podeFinalizar || estado === 'enviando' || !isOnline) && s.btnDisabled]}
+        style={[s.btn, (!podeFinalizar || estado === 'enviando') && s.btnDisabled]}
         onPress={handleFinalizar}
-        disabled={!podeFinalizar || estado === 'enviando' || !isOnline}>
+        disabled={!podeFinalizar || estado === 'enviando'}>
         {estado === 'enviando' ? <ActivityIndicator color={colors.white} />
-          : <Text style={s.btnText}>Finalizar Entrega</Text>}
+          : <Text style={s.btnText}>{isOnline ? 'Finalizar Entrega' : 'Salvar Offline'}</Text>}
       </TouchableOpacity>
 
       {!isOnline && (
-        <Text style={s.offlineHint}>Você precisa estar online para finalizar.</Text>
+        <Text style={s.offlineHint}>Sem conexão. Será salvo offline e sincronizado depois.</Text>
       )}
     </ScrollView>
   );
@@ -231,6 +289,9 @@ const s = StyleSheet.create({
   captureBtn: {
     backgroundColor: colors.bgSecondary, borderRadius: 10, padding: 24,
     alignItems: 'center', gap: 8, borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
+  },
+  captureBtnLoading: {
+    borderColor: colors.accent, borderStyle: 'solid',
   },
   preview: { width: '100%', height: 200, borderRadius: 10 },
   ausenteRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

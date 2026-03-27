@@ -1,6 +1,7 @@
 import { getDatabase, generateLocalId } from './database';
 import {
   apiUploadImagem, apiCriarEntrega, apiFinalizarEntrega,
+  apiListarCamposImagem,
   type CriarEntregaPayload, type EntregaResponse,
 } from '../api/client';
 
@@ -55,6 +56,66 @@ export async function salvarEntregaOffline(
   }
 
   return localId;
+}
+
+// ─── Atualizar entrega offline existente ─────────────────────────────────────
+
+export async function atualizarEntregaOffline(
+  localId: string,
+  updates: {
+    latitude?: number;
+    longitude?: number;
+    status?: 'PENDENTE' | 'ENVIADO';
+    campos_ausentes?: string[];
+  },
+  novasImagens?: { campo_key: string; file_uri: string }[],
+): Promise<void> {
+  const db = await getDatabase();
+
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (updates.latitude !== undefined) { sets.push('latitude = ?'); values.push(updates.latitude); }
+  if (updates.longitude !== undefined) { sets.push('longitude = ?'); values.push(updates.longitude); }
+  if (updates.status !== undefined) { sets.push('status = ?'); values.push(updates.status); }
+  if (updates.campos_ausentes !== undefined) {
+    sets.push('campos_ausentes = ?');
+    values.push(updates.campos_ausentes.length ? updates.campos_ausentes.join(',') : null);
+  }
+  // Marca como não sincronizado para reenviar
+  sets.push('sincronizado = 0');
+
+  if (sets.length > 0) {
+    values.push(localId);
+    await db.runAsync(`UPDATE entregas_offline SET ${sets.join(', ')} WHERE local_id = ?`, values);
+  }
+
+  if (novasImagens && novasImagens.length > 0) {
+    for (const img of novasImagens) {
+      const imgId = generateLocalId();
+      await db.runAsync(
+        `INSERT INTO imagens_offline (local_id, entrega_local_id, campo_key, file_uri, sincronizado)
+         VALUES (?, ?, ?, ?, 0)`,
+        [imgId, localId, img.campo_key, img.file_uri],
+      );
+    }
+  }
+}
+
+// ─── Buscar entrega offline por local_id ─────────────────────────────────────
+
+export async function buscarEntregaOffline(localId: string): Promise<EntregaOffline | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<any>(
+    'SELECT * FROM entregas_offline WHERE local_id = ?',
+    [localId],
+  );
+  if (!row) return null;
+  return {
+    ...row,
+    campos_ausentes: row.campos_ausentes ? row.campos_ausentes.split(',') : null,
+    sincronizado: !!row.sincronizado,
+  };
 }
 
 // ─── Listar entregas offline não sincronizadas ───────────────────────────────
@@ -128,7 +189,6 @@ export async function sincronizarEntregasPendentes(token: string): Promise<{
           );
         } catch (err) {
           console.warn('Falha no upload da imagem:', img.local_id, err);
-          // Continua tentando as outras imagens
         }
       }
 
@@ -141,14 +201,34 @@ export async function sincronizarEntregasPendentes(token: string): Promise<{
           campos_ausentes: entrega.campos_ausentes ? entrega.campos_ausentes.split(',') : undefined,
         }, token);
       } else {
-        // 3. Criar nova entrega no servidor
+        // 3. Determinar se a entrega está completa para enviar como ENVIADO
+        // Busca campos obrigatórios do cache
+        const camposObrig = await db.getAllAsync<any>(
+          'SELECT key FROM campos_imagem WHERE obrigatorio = 1',
+        );
+        const keysObrig = new Set(camposObrig.map((c: any) => c.key));
+        const keysEnviadas = new Set(imagensUpload.map((i) => i.tipo));
+        const camposAusentes = entrega.campos_ausentes ? entrega.campos_ausentes.split(',') : [];
+        const camposAusentesSet = new Set(camposAusentes);
+
+        // Entrega completa = todos os campos obrigatórios têm imagem OU foram marcados como ausentes
+        // + tem localização válida
+        const todosObrigOk = [...keysObrig].every(
+          (k) => keysEnviadas.has(k) || camposAusentesSet.has(k),
+        );
+        const temLocalizacao = entrega.latitude !== 0 || entrega.longitude !== 0;
+        const entregaCompleta = todosObrigOk && temLocalizacao && imagensUpload.length > 0;
+
+        // Se completa, envia como ENVIADO; senão mantém PENDENTE
+        const statusFinal = entregaCompleta ? 'ENVIADO' : 'PENDENTE';
+
         const payload: CriarEntregaPayload = {
           chave_nfe: entrega.chave_nfe,
           latitude: entrega.latitude,
           longitude: entrega.longitude,
           imagens: imagensUpload,
-          status: entrega.status,
-          campos_ausentes: entrega.campos_ausentes ? entrega.campos_ausentes.split(',') : undefined,
+          status: statusFinal,
+          campos_ausentes: camposAusentes.length ? camposAusentes : undefined,
         };
 
         const result = await apiCriarEntrega(payload, token);
@@ -185,9 +265,14 @@ export async function sincronizarEntregasPendentes(token: string): Promise<{
 export async function cachearEntregas(entregas: EntregaResponse[]): Promise<void> {
   const db = await getDatabase();
   const agora = new Date().toISOString();
+
+  // Limpa o cache antigo e substitui com dados frescos
+  // Isso evita que entregas já finalizadas/enviadas fiquem no cache como "PENDENTE"
+  await db.runAsync('DELETE FROM entregas_cache');
+
   for (const e of entregas) {
     await db.runAsync(
-      `INSERT OR REPLACE INTO entregas_cache (id, data, atualizado_em) VALUES (?, ?, ?)`,
+      `INSERT INTO entregas_cache (id, data, atualizado_em) VALUES (?, ?, ?)`,
       [e.id, JSON.stringify(e), agora],
     );
   }
@@ -197,6 +282,11 @@ export async function obterEntregasCache(): Promise<EntregaResponse[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>('SELECT data FROM entregas_cache ORDER BY atualizado_em DESC');
   return rows.map((r) => JSON.parse(r.data));
+}
+
+export async function invalidarCacheEntrega(entregaId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM entregas_cache WHERE id = ?', [entregaId]);
 }
 
 // ─── Cache de campos imagem ──────────────────────────────────────────────────

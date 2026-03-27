@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   getToken, getMinhaContaInfo,
   listarCamposImagem, criarCampoImagem, atualizarCampoImagem, excluirCampoImagem,
@@ -168,8 +169,17 @@ export default function MinhaContaPage() {
   const dataCriacao = new Date(conta.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: 640 }}>
-      <h1 style={s.titulo}>Minha Conta</h1>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <h1 style={s.titulo}>Minha Conta</h1>
+        <a href="/add-entregas.apk" download="ADD+ Entregas.apk" title="Baixar App Android"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textDecoration: 'none', gap: '6px' }}>
+          <div style={{ width: '130px', height: '53px', backgroundColor: '#ffffff', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Image src="/apkicon.png" alt="Baixar APK" width={130} height={53} style={{ objectFit: 'contain', cursor: 'pointer', borderRadius: '10px' }} />
+          </div>
+          <span style={{ fontSize: '11px', color: colors.textMuted, fontFamily: fonts.body }}>Baixar App</span>
+        </a>
+      </div>
 
       <div style={s.card}>
         <div style={s.avatar}>{conta.nome.charAt(0).toUpperCase()}</div>
