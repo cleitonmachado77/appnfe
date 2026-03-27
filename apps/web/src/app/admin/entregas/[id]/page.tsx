@@ -39,7 +39,11 @@ export default function DetalheEntregaPage() {
 
   // Detecta campos já vazios no servidor (ex: após reload) além dos limpos na sessão
   const chaveVazia = !entrega?.chave_nfe?.trim();
-  const localizacaoVazia = Number(entrega?.latitude) === 0 && Number(entrega?.longitude) === 0;
+  // Verifica se latitude/longitude são 0, null, undefined ou string vazia
+  // parseFloat lida com strings e números, retorna NaN para valores inválidos
+  const lat = parseFloat(String(entrega?.latitude ?? ''));
+  const lng = parseFloat(String(entrega?.longitude ?? ''));
+  const localizacaoVazia = (isNaN(lat) || lat === 0) && (isNaN(lng) || lng === 0);
   const imagensObrigatorias = camposImagem.filter((c) => c.ativo && c.obrigatorio);
   const imagensPresentes = new Set((entrega?.imagens ?? []).map((i) => i.campo_key ?? i.tipo ?? '').filter(Boolean));
   // Só considera falta de imagem se camposImagem já foi carregado
