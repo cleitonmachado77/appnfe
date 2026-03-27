@@ -104,7 +104,7 @@ export class UsuariosService {
     return { entregas_pendentes, transferencias_pendentes };
   }
 
-  // ---- Usuários Admin ----
+  // ---- Usuários do Painel (perfil USUARIO) ----
 
   async criarAdmin(dto: CriarUsuarioDto, empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>> {
     const existente = await this.usuariosRepository.findOne({ where: { email: dto.email } });
@@ -115,7 +115,8 @@ export class UsuariosService {
       nome: dto.nome,
       email: dto.email,
       senha_hash,
-      tipo: PerfilUsuario.ADMIN,
+      tipo: PerfilUsuario.USUARIO,
+      cargo: dto.cargo ?? null,
       empresa_id: empresa_id ?? null,
     });
 
@@ -125,7 +126,7 @@ export class UsuariosService {
   }
 
   async listarAdmins(empresa_id?: string | null): Promise<Omit<Usuario, 'senha_hash'>[]> {
-    const where: any = { tipo: PerfilUsuario.ADMIN };
+    const where: any = { tipo: PerfilUsuario.USUARIO };
     if (empresa_id) where.empresa_id = empresa_id;
 
     const usuarios = await this.usuariosRepository.find({ where, order: { ativo: 'DESC', criado_em: 'DESC' } });
@@ -133,27 +134,27 @@ export class UsuariosService {
   }
 
   async inativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    const where: any = { id, tipo: PerfilUsuario.USUARIO };
     if (empresa_id) where.empresa_id = empresa_id;
     const usuario = await this.usuariosRepository.findOne({ where });
-    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
     await this.usuariosRepository.update(id, { ativo: false, inativado_em: new Date() });
   }
 
   async reativarAdmin(id: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    const where: any = { id, tipo: PerfilUsuario.USUARIO };
     if (empresa_id) where.empresa_id = empresa_id;
     const usuario = await this.usuariosRepository.findOne({ where });
-    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
     if (usuario.ativo) throw new BadRequestException('Usuário já está ativo');
     await this.usuariosRepository.update(id, { ativo: true, inativado_em: null });
   }
 
   async alterarSenhaAdmin(id: string, novaSenha: string, empresa_id?: string | null): Promise<void> {
-    const where: any = { id, tipo: PerfilUsuario.ADMIN };
+    const where: any = { id, tipo: PerfilUsuario.USUARIO };
     if (empresa_id) where.empresa_id = empresa_id;
     const usuario = await this.usuariosRepository.findOne({ where });
-    if (!usuario) throw new NotFoundException('Usuário admin não encontrado');
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
     const senha_hash = await bcrypt.hash(novaSenha, 10);
     await this.usuariosRepository.update(id, { senha_hash });
   }

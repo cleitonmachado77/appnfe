@@ -25,7 +25,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     const token = getToken();
     const perfil = getPerfil();
-    if (!token || perfil !== 'ADMIN') { router.replace('/login'); return; }
+    if (!token || (perfil !== 'ADMIN' && perfil !== 'USUARIO')) { router.replace('/login'); return; }
     setNome(typeof window !== 'undefined' ? localStorage.getItem('nome') ?? '' : '');
     setAutenticado(true);
   }, [router]);

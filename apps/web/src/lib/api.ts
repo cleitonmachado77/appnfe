@@ -733,6 +733,7 @@ export interface AdminUsuarioResponse {
   id: string;
   nome: string;
   email: string;
+  cargo?: string | null;
   criado_em?: string;
   ativo?: boolean;
   inativado_em?: string | null;
@@ -750,7 +751,7 @@ export async function listarAdmins(token: string): Promise<AdminUsuarioResponse[
 }
 
 export async function criarAdmin(
-  dados: { nome: string; email: string; senha: string },
+  dados: { nome: string; email: string; senha: string; cargo?: string },
   token: string,
 ): Promise<AdminUsuarioResponse> {
   const res = await apiFetch(`${API_URL}/usuarios/admins`, {

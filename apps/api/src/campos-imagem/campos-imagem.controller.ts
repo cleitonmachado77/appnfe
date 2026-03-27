@@ -21,26 +21,26 @@ export class CamposImagemController {
 
   /** Admin lista todos os campos (incluindo inativos) */
   @Get()
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   async listar(@Request() req: any) {
     return this.service.listar(req.user.empresa_id);
   }
 
   @Post()
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.CREATED)
   async criar(@Body() dto: CriarCampoDto, @Request() req: any) {
     return this.service.criar(req.user.empresa_id, dto);
   }
 
   @Patch(':id')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   async atualizar(@Param('id') id: string, @Body() dto: AtualizarCampoDto, @Request() req: any) {
     return this.service.atualizar(id, req.user.empresa_id, dto);
   }
 
   @Delete(':id')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async excluir(@Param('id') id: string, @Request() req: any) {
     return this.service.excluir(id, req.user.empresa_id);

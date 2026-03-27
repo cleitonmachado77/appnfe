@@ -10,7 +10,7 @@ import { CertificadoService } from './certificado.service';
 
 @Controller('certificado')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@Roles('ADMIN', 'USUARIO')
 export class CertificadoController {
   constructor(private readonly certificadoService: CertificadoService) {}
 

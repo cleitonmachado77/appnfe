@@ -10,14 +10,14 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('clientes')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async getClientes(@Request() req: any) {
     return this.dashboardService.getClientes(req.user.empresa_id);
   }
 
   @Get()
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async getDashboard(
     @Request() req: any,

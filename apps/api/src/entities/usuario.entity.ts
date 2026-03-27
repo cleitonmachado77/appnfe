@@ -13,6 +13,7 @@ import { Empresa } from './empresa.entity';
 export enum PerfilUsuario {
   ENTREGADOR = 'ENTREGADOR',
   ADMIN = 'ADMIN',
+  USUARIO = 'USUARIO',
   SUPER_ADMIN = 'SUPER_ADMIN',
 }
 
@@ -35,6 +36,9 @@ export class Usuario {
 
   @Column({ type: 'uuid', nullable: true })
   empresa_id!: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  cargo!: string | null;
 
   @Column({ type: 'boolean', default: true })
   ativo!: boolean;

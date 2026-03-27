@@ -53,49 +53,49 @@ export class EntregasController {
   }
 
   @Get()
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async listar(@Query() filtros: FiltrosEntregaDto, @Request() req: any) {
     return this.entregasService.listar(filtros, req.user.empresa_id);
   }
 
   @Get(':id')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async buscarPorId(@Param('id') id: string) {
     return this.entregasService.buscarPorId(id);
   }
 
   @Post(':id/danfe')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async reprocessarDanfe(@Param('id') id: string) {
     return this.entregasService.reprocessarDanfe(id);
   }
 
   @Patch(':id/reativar')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async reativar(@Param('id') id: string, @Body() dto: ReativarEntregaDto) {
     return this.entregasService.reativar(id, dto.comentario);
   }
 
   @Patch(':id/conferir')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async conferir(@Param('id') id: string, @Body() dto: { conferida: boolean }) {
     return this.entregasService.conferir(id, dto.conferida);
   }
 
   @Delete('imagens/:imagemId')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async excluirImagem(@Param('imagemId') imagemId: string, @Request() req: any) {
     return this.entregasService.excluirImagem(imagemId, req.user.empresa_id);
   }
 
   @Patch(':id/limpar-campos')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async limparCampos(
     @Param('id') id: string,
@@ -105,7 +105,7 @@ export class EntregasController {
   }
 
   @Delete(':id')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async excluir(@Param('id') id: string) {
     return this.entregasService.excluir(id);

@@ -55,6 +55,7 @@ export default function MinhaContaPage() {
   const [salvandoSenhaAdmin, setSalvandoSenhaAdmin] = useState(false);
   const [erroSenhaAdmin, setErroSenhaAdmin] = useState('');
   const [sucessoSenhaAdmin, setSucessoSenhaAdmin] = useState(false);
+  const [adminCargo, setAdminCargo] = useState('');
 
   useEffect(() => {
     const token = getToken();
@@ -118,9 +119,9 @@ export default function MinhaContaPage() {
     const token = getToken(); if (!token) return;
     setSalvandoAdmin(true); setErroAdmin(''); setSucessoAdmin('');
     try {
-      await criarAdmin({ nome: adminNome, email: adminEmail, senha: adminSenha }, token);
+      await criarAdmin({ nome: adminNome, email: adminEmail, senha: adminSenha, cargo: adminCargo || undefined }, token);
       setSucessoAdmin(`Login criado para ${adminNome}.`);
-      setAdminNome(''); setAdminEmail(''); setAdminSenha('');
+      setAdminNome(''); setAdminEmail(''); setAdminSenha(''); setAdminCargo('');
       const lista = await listarAdmins(token);
       setAdmins(lista);
       setTimeout(() => { setSucessoAdmin(''); setModalAdmin(false); }, 2000);
@@ -163,6 +164,7 @@ export default function MinhaContaPage() {
   if (carregando) return <p style={{ color: colors.textSecondary, fontFamily: fonts.body }}>Carregando…</p>;
   if (!conta) return null;
 
+  const isAdmin = conta.tipo === 'ADMIN';
   const dataCriacao = new Date(conta.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
   return (
@@ -277,14 +279,14 @@ export default function MinhaContaPage() {
         📋 Ver Logs de Auditoria →
       </Link>
 
-      {/* Seção Usuários Admin */}
+      {/* Seção Usuários do Painel */}
       <div style={s.secao}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <p style={{ ...s.secaoTitulo, margin: 0 }}>Usuários do Painel</p>
-          <button onClick={() => { setModalAdmin(true); setErroAdmin(''); setSucessoAdmin(''); setAdminNome(''); setAdminEmail(''); setAdminSenha(''); }} style={s.btnAdicionar}>+ Novo Usuário</button>
+          {isAdmin && <button onClick={() => { setModalAdmin(true); setErroAdmin(''); setSucessoAdmin(''); setAdminNome(''); setAdminEmail(''); setAdminSenha(''); setAdminCargo(''); }} style={s.btnAdicionar}>+ Novo Usuário</button>}
         </div>
         <p style={{ margin: '0 0 1rem', fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body }}>
-          Gerencie logins de usuários que acessam o painel administrativo. Eles não são entregadores.
+          {isAdmin ? 'Gerencie logins de usuários que acessam o painel administrativo.' : 'Usuários que acessam o painel administrativo.'}
         </p>
 
         {erroAdmin && <p style={{ color: colors.error, fontSize: '0.8rem', marginBottom: '0.75rem', fontFamily: fonts.body }}>{erroAdmin}</p>}
@@ -298,21 +300,24 @@ export default function MinhaContaPage() {
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '0.875rem', color: colors.textPrimary, fontFamily: fonts.body, fontWeight: 500 }}>{admin.nome}</span>
                   <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: colors.textMuted, fontFamily: fonts.body }}>{admin.email}</span>
+                  {admin.cargo && <span style={s.tagCargo}>{admin.cargo}</span>}
                   {admin.ativo === false && <span style={s.tagInativo}>inativo</span>}
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    onClick={() => { setModalSenhaAdmin(admin); setNovaSenhaAdmin(''); setErroSenhaAdmin(''); setSucessoSenhaAdmin(false); }}
-                    style={s.btnIcone}
-                    title="Alterar senha"
-                  >🔑</button>
-                  <button
-                    onClick={() => handleAlternarAdmin(admin)}
-                    disabled={alternandoAdmin === admin.id}
-                    style={s.btnIcone}
-                    title={admin.ativo !== false ? 'Inativar' : 'Reativar'}
-                  >{admin.ativo !== false ? '⛔' : '✅'}</button>
-                </div>
+                {isAdmin && (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={() => { setModalSenhaAdmin(admin); setNovaSenhaAdmin(''); setErroSenhaAdmin(''); setSucessoSenhaAdmin(false); }}
+                      style={s.btnIcone}
+                      title="Alterar senha"
+                    >🔑</button>
+                    <button
+                      onClick={() => handleAlternarAdmin(admin)}
+                      disabled={alternandoAdmin === admin.id}
+                      style={s.btnIcone}
+                      title={admin.ativo !== false ? 'Inativar' : 'Reativar'}
+                    >{admin.ativo !== false ? '⛔' : '✅'}</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -320,7 +325,7 @@ export default function MinhaContaPage() {
       </div>
 
       {/* Modal Criar Admin */}
-      {modalAdmin && (
+      {modalAdmin && isAdmin && (
         <div style={s.overlay} onClick={() => setModalAdmin(false)}>
           <div style={s.modal} onClick={(e) => e.stopPropagation()}>
             <p style={{ ...s.secaoTitulo, marginBottom: '1rem' }}>Novo Usuário do Painel</p>
@@ -333,6 +338,10 @@ export default function MinhaContaPage() {
               <div>
                 <label style={s.label}>E-mail</label>
                 <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} required style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={s.label}>Cargo</label>
+                <input value={adminCargo} onChange={(e) => setAdminCargo(e.target.value)} placeholder="Ex: Gerente, Financeiro, Operacional" style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
               </div>
               <div>
                 <label style={s.label}>Senha (mín. 8 caracteres)</label>
@@ -351,7 +360,7 @@ export default function MinhaContaPage() {
       )}
 
       {/* Modal Alterar Senha Admin */}
-      {modalSenhaAdmin && (
+      {modalSenhaAdmin && isAdmin && (
         <div style={s.overlay} onClick={() => setModalSenhaAdmin(null)}>
           <div style={s.modal} onClick={(e) => e.stopPropagation()}>
             <p style={{ ...s.secaoTitulo, marginBottom: '1rem' }}>Alterar Senha — {modalSenhaAdmin.nome}</p>
@@ -399,6 +408,7 @@ const s: Record<string, React.CSSProperties> = {
   campoRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 0.75rem', backgroundColor: colors.bgSecondary, borderRadius: radius.md, border: `1px solid ${colors.border}` },
   tagObrig: { marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: colors.accentLight, color: colors.accent, border: `1px solid ${colors.accentBorder}`, borderRadius: '9999px', padding: '1px 7px', fontFamily: fonts.body },
   tagInativo: { marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: colors.errorBg, color: colors.error, border: `1px solid ${colors.errorBorder}`, borderRadius: '9999px', padding: '1px 7px', fontFamily: fonts.body },
+  tagCargo: { marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: colors.bgSecondary, color: colors.textSecondary, border: `1px solid ${colors.border}`, borderRadius: '9999px', padding: '1px 7px', fontFamily: fonts.body },
   btnIcone: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', padding: '2px 4px' },
   input: { padding: '0.4rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: '0.875rem', backgroundColor: colors.bgPrimary, color: colors.textPrimary, fontFamily: fonts.body, outline: 'none' },
   label: { fontSize: '0.7rem', color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' },

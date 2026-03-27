@@ -28,11 +28,11 @@ export class UsuariosController {
     return this.usuariosService.buscarPorId(req.user.userId);
   }
 
-  // ---- Endpoints para usuários admin (antes das rotas :id) ----
+  // ---- Endpoints para usuários do painel (apenas ADMIN pode gerenciar) ----
 
   @Post('admins')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
   criarAdmin(@Body() dto: CriarUsuarioDto, @Request() req: any) {
     return this.usuariosService.criarAdmin(dto, req.user.empresa_id);
@@ -40,7 +40,7 @@ export class UsuariosController {
 
   @Get('admins')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   listarAdmins(@Request() req: any) {
     return this.usuariosService.listarAdmins(req.user.empresa_id);
@@ -48,7 +48,7 @@ export class UsuariosController {
 
   @Delete('admins/:id')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
   inativarAdmin(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.inativarAdmin(id, req.user.empresa_id);
@@ -56,7 +56,7 @@ export class UsuariosController {
 
   @Patch('admins/:id/reativar')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
   reativarAdmin(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.reativarAdmin(id, req.user.empresa_id);
@@ -64,7 +64,7 @@ export class UsuariosController {
 
   @Patch('admins/:id/senha')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.NO_CONTENT)
   alterarSenhaAdmin(@Param('id') id: string, @Body() dto: AlterarSenhaDto, @Request() req: any) {
     return this.usuariosService.alterarSenhaAdmin(id, dto.nova_senha, req.user.empresa_id);
@@ -74,7 +74,7 @@ export class UsuariosController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.CREATED)
   criar(@Body() dto: CriarUsuarioDto, @Request() req: any) {
     return this.usuariosService.criar(dto, req.user.empresa_id);
@@ -82,7 +82,7 @@ export class UsuariosController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   listar(@Request() req: any) {
     return this.usuariosService.listar(req.user.empresa_id);
@@ -90,7 +90,7 @@ export class UsuariosController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   excluir(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.excluir(id, req.user.empresa_id);
@@ -98,7 +98,7 @@ export class UsuariosController {
 
   @Delete(':id/permanente')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   excluirPermanente(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.excluirPermanente(id, req.user.empresa_id);
@@ -106,7 +106,7 @@ export class UsuariosController {
 
   @Patch(':id/reativar')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   reativar(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.reativar(id, req.user.empresa_id);
@@ -114,7 +114,7 @@ export class UsuariosController {
 
   @Patch(':id/senha')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.NO_CONTENT)
   alterarSenha(@Param('id') id: string, @Body() dto: AlterarSenhaDto, @Request() req: any) {
     return this.usuariosService.alterarSenha(id, dto.nova_senha, req.user.empresa_id);
@@ -122,7 +122,7 @@ export class UsuariosController {
 
   @Get(':id/pendencias')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   contarPendencias(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.contarPendencias(id, req.user.empresa_id);
@@ -130,7 +130,7 @@ export class UsuariosController {
 
   @Post(':id/migrar')
   @UseGuards(RolesGuard)
-  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Roles('ADMIN', 'SUPER_ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   migrar(@Param('id') id: string, @Body() dto: MigrarDto, @Request() req: any) {
     return this.usuariosService.migrar(id, dto.destino_id, req.user.empresa_id);

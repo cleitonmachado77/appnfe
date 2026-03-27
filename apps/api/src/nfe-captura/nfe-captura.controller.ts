@@ -21,7 +21,7 @@ export class NfeCapturaController {
   constructor(private readonly nfeCapturaService: NfeCapturaService) {}
 
   @Get()
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async listar(
     @Request() req: any,
@@ -45,21 +45,21 @@ export class NfeCapturaController {
   }
 
   @Get('cruzamento')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async cruzamento(@Request() req: any) {
     return this.nfeCapturaService.cruzarComEntregas(req.user.empresa_id);
   }
 
   @Get('controle-nsu')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async controleNsu(@Request() req: any) {
     return this.nfeCapturaService.obterControleNsu(req.user.empresa_id);
   }
 
   @Get(':chave')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.OK)
   async buscarPorChave(@Param('chave') chave: string, @Request() req: any) {
     return this.nfeCapturaService.buscarPorChave(chave, req.user.empresa_id);
@@ -67,7 +67,7 @@ export class NfeCapturaController {
 
   /** Dispara captura manual para a empresa do admin logado */
   @Post('capturar')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'USUARIO')
   @HttpCode(HttpStatus.ACCEPTED)
   async capturarManual(@Request() req: any) {
     // Executa de forma assíncrona para não bloquear a resposta
