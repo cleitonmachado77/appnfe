@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
-  getToken, getMinhaContaInfo,
+  getToken, getMinhaContaInfo, atualizarMinhaEmpresa, atualizarMeuPerfil,
   listarCamposImagem, criarCampoImagem, atualizarCampoImagem, excluirCampoImagem,
   listarAdmins, criarAdmin, inativarAdmin, reativarAdmin, alterarSenhaAdmin,
   type CampoImagemResponse,
@@ -20,7 +20,31 @@ interface ContaInfo {
   tipo: string;
   empresa_id: string | null;
   criado_em: string;
-  empresa?: { razao_social: string; cnpj: string; plano: string | null; status: string } | null;
+  empresa?: {
+    id: string;
+    razao_social: string;
+    nome_fantasia: string | null;
+    cnpj: string;
+    inscricao_estadual: string | null;
+    segmento: string | null;
+    email_contato: string;
+    telefone: string | null;
+    celular: string | null;
+    site: string | null;
+    cep: string | null;
+    logradouro: string | null;
+    numero: string | null;
+    complemento: string | null;
+    bairro: string | null;
+    cidade: string | null;
+    uf: string | null;
+    responsavel_nome: string;
+    responsavel_email: string;
+    responsavel_telefone: string | null;
+    responsavel_cpf: string | null;
+    plano: string | null;
+    status: string;
+  } | null;
 }
 
 const CAMPOS_PADRAO = ['CANHOTO', 'LOCAL'];
@@ -40,6 +64,23 @@ export default function MinhaContaPage() {
   const [editLabel, setEditLabel] = useState('');
   const [editObrigatorio, setEditObrigatorio] = useState(true);
   const [editAtivo, setEditAtivo] = useState(true);
+
+  // empresa editing
+  const [editandoEmpresa, setEditandoEmpresa] = useState(false);
+  const [empresaForm, setEmpresaForm] = useState<Record<string, string>>({});
+  const [salvandoEmpresa, setSalvandoEmpresa] = useState(false);
+  const [erroEmpresa, setErroEmpresa] = useState('');
+  const [sucessoEmpresa, setSucessoEmpresa] = useState('');
+
+  // perfil editing
+  const [editandoPerfil, setEditandoPerfil] = useState(false);
+  const [perfilNome, setPerfilNome] = useState('');
+  const [perfilEmail, setPerfilEmail] = useState('');
+  const [perfilSenhaAtual, setPerfilSenhaAtual] = useState('');
+  const [perfilNovaSenha, setPerfilNovaSenha] = useState('');
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
+  const [erroPerfil, setErroPerfil] = useState('');
+  const [sucessoPerfil, setSucessoPerfil] = useState('');
 
   // usuários admin
   const [admins, setAdmins] = useState<AdminUsuarioResponse[] | null>(null);
@@ -67,6 +108,92 @@ export default function MinhaContaPage() {
     listarCamposImagem(token).then(setCampos).catch(() => {});
     listarAdmins(token).then(setAdmins).catch((err) => { console.error('Erro ao listar admins:', err); setAdmins([]); });
   }, [router]);
+
+  function iniciarEdicaoPerfil() {
+    if (!conta) return;
+    setPerfilNome(conta.nome);
+    setPerfilEmail(conta.email);
+    setPerfilSenhaAtual('');
+    setPerfilNovaSenha('');
+    setEditandoPerfil(true);
+    setErroPerfil('');
+    setSucessoPerfil('');
+  }
+
+  async function handleSalvarPerfil(ev: React.FormEvent) {
+    ev.preventDefault();
+    const token = getToken(); if (!token) return;
+    setSalvandoPerfil(true); setErroPerfil(''); setSucessoPerfil('');
+    try {
+      const dados: Record<string, string> = {};
+      if (perfilNome !== conta!.nome) dados.nome = perfilNome;
+      if (perfilEmail !== conta!.email) dados.email = perfilEmail;
+      if (perfilNovaSenha) {
+        dados.senha_atual = perfilSenhaAtual;
+        dados.nova_senha = perfilNovaSenha;
+      }
+      if (Object.keys(dados).length === 0) {
+        setEditandoPerfil(false);
+        return;
+      }
+      await atualizarMeuPerfil(dados, token);
+      setSucessoPerfil('Perfil atualizado com sucesso.');
+      setEditandoPerfil(false);
+      const data = await getMinhaContaInfo(token);
+      setConta(data as ContaInfo);
+      // Atualiza nome no localStorage e notifica o header
+      localStorage.setItem('nome', (data as ContaInfo).nome);
+      window.dispatchEvent(new CustomEvent('perfil-atualizado'));
+    } catch (err) {
+      setErroPerfil(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally { setSalvandoPerfil(false); }
+  }
+
+  function iniciarEdicaoEmpresa() {
+    if (!conta?.empresa) return;
+    const e = conta.empresa;
+    setEmpresaForm({
+      razao_social: e.razao_social ?? '',
+      nome_fantasia: e.nome_fantasia ?? '',
+      cnpj: e.cnpj ?? '',
+      inscricao_estadual: e.inscricao_estadual ?? '',
+      segmento: e.segmento ?? '',
+      email_contato: e.email_contato ?? '',
+      telefone: e.telefone ?? '',
+      celular: e.celular ?? '',
+      site: e.site ?? '',
+      cep: e.cep ?? '',
+      logradouro: e.logradouro ?? '',
+      numero: e.numero ?? '',
+      complemento: e.complemento ?? '',
+      bairro: e.bairro ?? '',
+      cidade: e.cidade ?? '',
+      uf: e.uf ?? '',
+      responsavel_nome: e.responsavel_nome ?? '',
+      responsavel_email: e.responsavel_email ?? '',
+      responsavel_telefone: e.responsavel_telefone ?? '',
+      responsavel_cpf: e.responsavel_cpf ?? '',
+    });
+    setEditandoEmpresa(true);
+    setErroEmpresa('');
+    setSucessoEmpresa('');
+  }
+
+  async function handleSalvarEmpresa(ev: React.FormEvent) {
+    ev.preventDefault();
+    const token = getToken(); if (!token) return;
+    setSalvandoEmpresa(true); setErroEmpresa(''); setSucessoEmpresa('');
+    try {
+      await atualizarMinhaEmpresa(empresaForm, token);
+      setSucessoEmpresa('Dados atualizados com sucesso.');
+      setEditandoEmpresa(false);
+      // Recarrega dados da conta
+      const data = await getMinhaContaInfo(token);
+      setConta(data as ContaInfo);
+    } catch (err) {
+      setErroEmpresa(err instanceof Error ? err.message : 'Erro ao salvar');
+    } finally { setSalvandoEmpresa(false); }
+  }
 
   async function handleCriar(e: React.FormEvent) {
     e.preventDefault();
@@ -191,25 +318,130 @@ export default function MinhaContaPage() {
       </div>
 
       <div style={s.secao}>
-        <p style={s.secaoTitulo}>Informações da Conta</p>
-        <div style={s.linhas}>
-          <Linha label="ID" value={conta.id} mono />
-          <Linha label="Nome" value={conta.nome} />
-          <Linha label="E-mail" value={conta.email} />
-          <Linha label="Perfil" value={conta.tipo} />
-          <Linha label="Membro desde" value={dataCriacao} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <p style={{ ...s.secaoTitulo, margin: 0 }}>Informações da Conta</p>
+          {!editandoPerfil && (
+            <button onClick={iniciarEdicaoPerfil} style={s.btnAdicionar}>✏️ Editar</button>
+          )}
         </div>
+
+        {sucessoPerfil && <p style={{ color: colors.success, fontSize: '0.85rem', fontFamily: fonts.body, margin: '0 0 0.75rem' }}>{sucessoPerfil}</p>}
+
+        {editandoPerfil ? (
+          <form onSubmit={handleSalvarPerfil} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={s.label}>Nome</label>
+              <input value={perfilNome} onChange={(e) => setPerfilNome(e.target.value)} required minLength={2} style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={s.label}>E-mail</label>
+              <input type="email" value={perfilEmail} onChange={(e) => setPerfilEmail(e.target.value)} required style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} />
+            </div>
+            <p style={{ fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body, margin: '0.25rem 0 0' }}>Alterar senha (opcional)</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={s.label}>Senha atual</label>
+              <input type="password" value={perfilSenhaAtual} onChange={(e) => setPerfilSenhaAtual(e.target.value)} placeholder="Necessária para alterar a senha" style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} autoComplete="current-password" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={s.label}>Nova senha (mín. 8 caracteres)</label>
+              <input type="password" value={perfilNovaSenha} onChange={(e) => setPerfilNovaSenha(e.target.value)} minLength={8} placeholder="Deixe em branco para manter a atual" style={{ ...s.input, width: '100%', boxSizing: 'border-box' }} autoComplete="new-password" />
+            </div>
+            {erroPerfil && <p style={{ color: colors.error, fontSize: '0.8rem', margin: 0, fontFamily: fonts.body }}>{erroPerfil}</p>}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setEditandoPerfil(false)} style={s.btnCancelar}>Cancelar</button>
+              <button type="submit" disabled={salvandoPerfil} style={{ ...s.btnAdicionar, opacity: salvandoPerfil ? 0.6 : 1 }}>
+                {salvandoPerfil ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div style={s.linhas}>
+            <Linha label="ID" value={conta.id} mono />
+            <Linha label="Nome" value={conta.nome} />
+            <Linha label="E-mail" value={conta.email} />
+            <Linha label="Perfil" value={conta.tipo} />
+            <Linha label="Membro desde" value={dataCriacao} />
+          </div>
+        )}
       </div>
 
       {conta.empresa && (
         <div style={s.secao}>
-          <p style={s.secaoTitulo}>Empresa</p>
-          <div style={s.linhas}>
-            <Linha label="Razão Social" value={conta.empresa.razao_social} />
-            <Linha label="CNPJ" value={conta.empresa.cnpj} mono />
-            <Linha label="Plano" value={conta.empresa.plano ?? '—'} />
-            <Linha label="Status" value={conta.empresa.status} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <p style={{ ...s.secaoTitulo, margin: 0 }}>Empresa</p>
+            {!editandoEmpresa && (
+              <button onClick={iniciarEdicaoEmpresa} style={s.btnAdicionar}>✏️ Editar</button>
+            )}
           </div>
+
+          {sucessoEmpresa && <p style={{ color: colors.success, fontSize: '0.85rem', fontFamily: fonts.body, margin: '0 0 0.75rem' }}>{sucessoEmpresa}</p>}
+
+          {editandoEmpresa ? (
+            <form onSubmit={handleSalvarEmpresa} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <p style={{ fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body, margin: 0 }}>Dados Gerais</p>
+              <div style={s.formGrid}>
+                <CampoEmpresa label="Razão Social" name="razao_social" value={empresaForm.razao_social} onChange={(v) => setEmpresaForm((p) => ({ ...p, razao_social: v }))} required />
+                <CampoEmpresa label="Nome Fantasia" name="nome_fantasia" value={empresaForm.nome_fantasia} onChange={(v) => setEmpresaForm((p) => ({ ...p, nome_fantasia: v }))} />
+                <CampoEmpresa label="CNPJ" name="cnpj" value={empresaForm.cnpj} onChange={(v) => setEmpresaForm((p) => ({ ...p, cnpj: v }))} required mono />
+                <CampoEmpresa label="Inscrição Estadual" name="inscricao_estadual" value={empresaForm.inscricao_estadual} onChange={(v) => setEmpresaForm((p) => ({ ...p, inscricao_estadual: v }))} />
+                <CampoEmpresa label="Segmento" name="segmento" value={empresaForm.segmento} onChange={(v) => setEmpresaForm((p) => ({ ...p, segmento: v }))} />
+                <CampoEmpresa label="E-mail de Contato" name="email_contato" value={empresaForm.email_contato} onChange={(v) => setEmpresaForm((p) => ({ ...p, email_contato: v }))} required type="email" />
+                <CampoEmpresa label="Telefone" name="telefone" value={empresaForm.telefone} onChange={(v) => setEmpresaForm((p) => ({ ...p, telefone: v }))} />
+                <CampoEmpresa label="Celular" name="celular" value={empresaForm.celular} onChange={(v) => setEmpresaForm((p) => ({ ...p, celular: v }))} />
+                <CampoEmpresa label="Site" name="site" value={empresaForm.site} onChange={(v) => setEmpresaForm((p) => ({ ...p, site: v }))} />
+              </div>
+
+              <p style={{ fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body, margin: '0.5rem 0 0' }}>Endereço</p>
+              <div style={s.formGrid}>
+                <CampoEmpresa label="CEP" name="cep" value={empresaForm.cep} onChange={(v) => setEmpresaForm((p) => ({ ...p, cep: v }))} />
+                <CampoEmpresa label="Logradouro" name="logradouro" value={empresaForm.logradouro} onChange={(v) => setEmpresaForm((p) => ({ ...p, logradouro: v }))} />
+                <CampoEmpresa label="Número" name="numero" value={empresaForm.numero} onChange={(v) => setEmpresaForm((p) => ({ ...p, numero: v }))} />
+                <CampoEmpresa label="Complemento" name="complemento" value={empresaForm.complemento} onChange={(v) => setEmpresaForm((p) => ({ ...p, complemento: v }))} />
+                <CampoEmpresa label="Bairro" name="bairro" value={empresaForm.bairro} onChange={(v) => setEmpresaForm((p) => ({ ...p, bairro: v }))} />
+                <CampoEmpresa label="Cidade" name="cidade" value={empresaForm.cidade} onChange={(v) => setEmpresaForm((p) => ({ ...p, cidade: v }))} />
+                <CampoEmpresa label="UF" name="uf" value={empresaForm.uf} onChange={(v) => setEmpresaForm((p) => ({ ...p, uf: v.toUpperCase().slice(0, 2) }))} maxLength={2} />
+              </div>
+
+              <p style={{ fontSize: '0.8rem', color: colors.textMuted, fontFamily: fonts.body, margin: '0.5rem 0 0' }}>Responsável</p>
+              <div style={s.formGrid}>
+                <CampoEmpresa label="Nome" name="responsavel_nome" value={empresaForm.responsavel_nome} onChange={(v) => setEmpresaForm((p) => ({ ...p, responsavel_nome: v }))} required />
+                <CampoEmpresa label="E-mail" name="responsavel_email" value={empresaForm.responsavel_email} onChange={(v) => setEmpresaForm((p) => ({ ...p, responsavel_email: v }))} required type="email" />
+                <CampoEmpresa label="Telefone" name="responsavel_telefone" value={empresaForm.responsavel_telefone} onChange={(v) => setEmpresaForm((p) => ({ ...p, responsavel_telefone: v }))} />
+                <CampoEmpresa label="CPF" name="responsavel_cpf" value={empresaForm.responsavel_cpf} onChange={(v) => setEmpresaForm((p) => ({ ...p, responsavel_cpf: v }))} />
+              </div>
+
+              {erroEmpresa && <p style={{ color: colors.error, fontSize: '0.8rem', margin: 0, fontFamily: fonts.body }}>{erroEmpresa}</p>}
+
+              <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+                <button type="button" onClick={() => setEditandoEmpresa(false)} style={s.btnCancelar}>Cancelar</button>
+                <button type="submit" disabled={salvandoEmpresa} style={{ ...s.btnAdicionar, opacity: salvandoEmpresa ? 0.6 : 1 }}>
+                  {salvandoEmpresa ? 'Salvando…' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div style={s.linhas}>
+              <Linha label="Razão Social" value={conta.empresa.razao_social} />
+              <Linha label="Nome Fantasia" value={conta.empresa.nome_fantasia ?? '—'} />
+              <Linha label="CNPJ" value={conta.empresa.cnpj} mono />
+              <Linha label="Inscrição Estadual" value={conta.empresa.inscricao_estadual ?? '—'} />
+              <Linha label="Segmento" value={conta.empresa.segmento ?? '—'} />
+              <Linha label="E-mail de Contato" value={conta.empresa.email_contato ?? '—'} />
+              <Linha label="Telefone" value={conta.empresa.telefone ?? '—'} />
+              <Linha label="Celular" value={conta.empresa.celular ?? '—'} />
+              <Linha label="Site" value={conta.empresa.site ?? '—'} />
+              <Linha label="CEP" value={conta.empresa.cep ?? '—'} />
+              <Linha label="Endereço" value={[conta.empresa.logradouro, conta.empresa.numero, conta.empresa.complemento].filter(Boolean).join(', ') || '—'} />
+              <Linha label="Bairro" value={conta.empresa.bairro ?? '—'} />
+              <Linha label="Cidade / UF" value={[conta.empresa.cidade, conta.empresa.uf].filter(Boolean).join(' / ') || '—'} />
+              <Linha label="Responsável" value={conta.empresa.responsavel_nome ?? '—'} />
+              <Linha label="E-mail Responsável" value={conta.empresa.responsavel_email ?? '—'} />
+              <Linha label="Telefone Responsável" value={conta.empresa.responsavel_telefone ?? '—'} />
+              <Linha label="CPF Responsável" value={conta.empresa.responsavel_cpf ?? '—'} />
+              <Linha label="Plano" value={conta.empresa.plano ?? '—'} />
+              <Linha label="Status" value={conta.empresa.status} />
+            </div>
+          )}
         </div>
       )}
 
@@ -406,6 +638,26 @@ function Linha({ label, value, mono }: { label: string; value: string; mono?: bo
   );
 }
 
+function CampoEmpresa({ label, name, value, onChange, required, type, mono, maxLength }: {
+  label: string; name: string; value: string; onChange: (v: string) => void;
+  required?: boolean; type?: string; mono?: boolean; maxLength?: number;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <label style={{ fontSize: '0.7rem', color: colors.textMuted, fontFamily: fonts.body, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</label>
+      <input
+        name={name}
+        type={type ?? 'text'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        maxLength={maxLength}
+        style={{ padding: '0.4rem 0.75rem', border: `1px solid ${colors.border}`, borderRadius: radius.sm, fontSize: '0.875rem', backgroundColor: colors.bgPrimary, color: colors.textPrimary, fontFamily: mono ? 'monospace' : fonts.body, outline: 'none' }}
+      />
+    </div>
+  );
+}
+
 const s: Record<string, React.CSSProperties> = {
   titulo: { fontSize: '1.5rem', fontWeight: 700, color: colors.textPrimary, margin: 0, fontFamily: fonts.title },
   card: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.25rem' },
@@ -416,6 +668,7 @@ const s: Record<string, React.CSSProperties> = {
   secao: { backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1.25rem' },
   secaoTitulo: { margin: '0 0 0.5rem', fontSize: '0.75rem', fontWeight: 700, color: colors.textSecondary, fontFamily: fonts.title, textTransform: 'uppercase', letterSpacing: '0.07em' },
   linhas: { display: 'flex', flexDirection: 'column' },
+  formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem' },
   linkLogs: { display: 'flex', alignItems: 'center', backgroundColor: colors.bgCard, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '1rem 1.25rem', color: colors.accent, fontFamily: fonts.body, fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none' },
   campoRow: { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 0.75rem', backgroundColor: colors.bgSecondary, borderRadius: radius.md, border: `1px solid ${colors.border}` },
   tagObrig: { marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: colors.accentLight, color: colors.accent, border: `1px solid ${colors.accentBorder}`, borderRadius: '9999px', padding: '1px 7px', fontFamily: fonts.body },

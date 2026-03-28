@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   getToken,
   listarNfeEmitidas,
   dispararCaptura,
+  getControleNsu,
   getCertificadoInfo,
   uploadCertificado,
   removerCertificado,
@@ -51,67 +52,98 @@ function AbaEmissoes({ router }: { router: ReturnType<typeof useRouter> }) {
   const [carregando, setCarregando] = useState(true);
   const [capturando, setCapturando] = useState(false);
   const [erro, setErro] = useState('');
+  const [msgCaptura, setMsgCaptura] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroInicio, setFiltroInicio] = useState('');
   const [filtroFim, setFiltroFim] = useState('');
   const [filtroChave, setFiltroChave] = useState('');
+  const [cooldownMin, setCooldownMin] = useState(0);
   const LIMIT = 20;
+
+  // Refs para ler filtros atuais sem recriar o callback
+  const filtrosRef = React.useRef({ filtroStatus, filtroInicio, filtroFim, filtroChave });
+  filtrosRef.current = { filtroStatus, filtroInicio, filtroFim, filtroChave };
 
   const buscar = useCallback(async (p = 1) => {
     const token = getToken();
     if (!token) { router.replace('/login'); return; }
     setCarregando(true); setErro('');
+    const f = filtrosRef.current;
     try {
       const res = await listarNfeEmitidas(token, {
         page: p, limit: LIMIT,
-        status: filtroStatus || undefined,
-        data_inicio: filtroInicio || undefined,
-        data_fim: filtroFim || undefined,
-        chave_nfe: filtroChave || undefined,
+        status: f.filtroStatus || undefined,
+        data_inicio: f.filtroInicio || undefined,
+        data_fim: f.filtroFim || undefined,
+        chave_nfe: f.filtroChave || undefined,
       });
       setNfes(res.data); setTotal(res.total);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Erro ao carregar');
     } finally { setCarregando(false); }
-  }, [router, filtroStatus, filtroInicio, filtroFim, filtroChave]);
+  }, [router]);
 
-  useEffect(() => { buscar(1); }, [buscar]);
+  // Carrega cooldown do controle NSU
+  const atualizarCooldown = useCallback(async () => {
+    const token = getToken(); if (!token) return;
+    const ctrl = await getControleNsu(token);
+    if (ctrl?.atualizado_em && ctrl.ult_nsu === ctrl.max_nsu) {
+      const diff = (Date.now() - new Date(ctrl.atualizado_em).getTime()) / 60000;
+      setCooldownMin(diff < 60 ? Math.ceil(60 - diff) : 0);
+    } else {
+      setCooldownMin(0);
+    }
+  }, []);
+
+  // Busca inicial apenas uma vez
+  useEffect(() => { buscar(1); atualizarCooldown(); }, [buscar, atualizarCooldown]);
+
+  // Timer para atualizar cooldown a cada minuto
+  useEffect(() => {
+    if (cooldownMin <= 0) return;
+    const timer = setTimeout(() => setCooldownMin((m) => Math.max(0, m - 1)), 60000);
+    return () => clearTimeout(timer);
+  }, [cooldownMin]);
 
   async function handleCapturar() {
     const token = getToken();
     if (!token) return;
-    setCapturando(true);
+    setCapturando(true); setErro(''); setMsgCaptura('');
     try {
-      await dispararCaptura(token);
-      setTimeout(() => buscar(1), 3000); // aguarda um pouco e recarrega
+      const resultado = await dispararCaptura(token);
+      setMsgCaptura(resultado.message);
+      if (resultado.documentos && resultado.documentos > 0) {
+        buscar(1);
+      }
+      atualizarCooldown();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Erro ao capturar NF-e');
     } finally { setCapturando(false); }
   }
 
   const totalPaginas = Math.ceil(total / LIMIT);
+  const botaoDesabilitado = capturando || cooldownMin > 0;
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const d90 = new Date(); d90.setDate(d90.getDate() - 90);
+  const limite90dias = d90.toISOString().slice(0, 10);
 
   return (
     <div>
-      {/* Banner de captura em andamento */}
-      {capturando && (
-        <div style={s.capturaBanner}>
-          <style>{`
-            @keyframes capturaSlide {
-              0% { transform: translateX(-100%); }
-              100% { transform: translateX(400%); }
-            }
-            @keyframes capturaPulse {
-              0% { box-shadow: 0 0 0 0 ${colors.info}88; }
-              70% { box-shadow: 0 0 0 6px ${colors.info}00; }
-              100% { box-shadow: 0 0 0 0 ${colors.info}00; }
-            }
-          `}</style>
-          <div style={s.capturaProgressBar}>
-            <div style={s.capturaProgressFill} />
-          </div>
-          <div style={s.capturaTexto}>
-            <span style={s.capturaPulse} />
-            <span>Consultando SEFAZ — isso pode levar alguns segundos…</span>
-          </div>
+      {/* Aviso sobre NF-e vs NFS-e */}
+      <div style={{ backgroundColor: colors.infoBg, border: `1px solid ${colors.infoBorder}`, borderRadius: radius.lg, padding: '0.75rem 1rem', marginBottom: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+        <span style={{ flexShrink: 0 }}>ℹ️</span>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: colors.info, fontFamily: fonts.body, lineHeight: 1.5 }}>
+          Esta seção exibe apenas NF-e (modelo 55 — mercadorias/produtos) capturadas da SEFAZ estadual.
+          Notas Fiscais de Serviço (NFS-e) são emitidas pelas prefeituras municipais e não estão disponíveis neste painel.
+          A captura ocorre automaticamente a cada hora e também ao configurar o certificado digital.
+        </p>
+      </div>
+
+      {/* Mensagem da última captura */}
+      {msgCaptura && (
+        <div style={{ backgroundColor: colors.bgSecondary, border: `1px solid ${colors.border}`, borderRadius: radius.lg, padding: '0.6rem 1rem', marginBottom: '0.75rem' }}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: colors.textSecondary, fontFamily: fonts.body }}>{msgCaptura}</p>
         </div>
       )}
 
@@ -130,11 +162,11 @@ function AbaEmissoes({ router }: { router: ReturnType<typeof useRouter> }) {
           </div>
           <div style={s.campo}>
             <label style={s.label}>Data início</label>
-            <input type="date" value={filtroInicio} onChange={(e) => setFiltroInicio(e.target.value)} style={s.input} />
+            <input type="date" value={filtroInicio} onChange={(e) => setFiltroInicio(e.target.value)} max={filtroFim || hoje} min={limite90dias} style={s.input} />
           </div>
           <div style={s.campo}>
             <label style={s.label}>Data fim</label>
-            <input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} style={s.input} />
+            <input type="date" value={filtroFim} onChange={(e) => setFiltroFim(e.target.value)} max={hoje} min={filtroInicio || limite90dias} style={s.input} />
           </div>
           <div style={s.campo}>
             <label style={s.label}>Chave NF-e</label>
@@ -143,10 +175,19 @@ function AbaEmissoes({ router }: { router: ReturnType<typeof useRouter> }) {
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button onClick={() => { setPage(1); buscar(1); }} style={s.btnPrimario}>Filtrar</button>
-          <button onClick={() => { setFiltroStatus(''); setFiltroInicio(''); setFiltroFim(''); setFiltroChave(''); }} style={s.btnSecundario}>Limpar</button>
+          <button onClick={() => {
+            setFiltroStatus(''); setFiltroInicio(''); setFiltroFim(''); setFiltroChave('');
+            filtrosRef.current = { filtroStatus: '', filtroInicio: '', filtroFim: '', filtroChave: '' };
+            buscar(1);
+          }} style={s.btnSecundario}>Limpar</button>
           <div style={{ flex: 1 }} />
-          <button onClick={handleCapturar} disabled={capturando} style={{ ...s.btnPrimario, backgroundColor: colors.info, opacity: capturando ? 0.6 : 1 }}>
-            {capturando ? '⏳ Capturando…' : '⚡ Capturar Agora'}
+          <button
+            onClick={handleCapturar}
+            disabled={botaoDesabilitado}
+            title={cooldownMin > 0 ? `Aguarde ${cooldownMin} min para consultar novamente` : ''}
+            style={{ ...s.btnPrimario, backgroundColor: colors.info, opacity: botaoDesabilitado ? 0.5 : 1, cursor: botaoDesabilitado ? 'not-allowed' : 'pointer' }}
+          >
+            {capturando ? '⏳ Consultando…' : cooldownMin > 0 ? `⏳ Aguarde ${cooldownMin} min` : '⚡ Consultar SEFAZ'}
           </button>
         </div>
       </div>
@@ -159,7 +200,7 @@ function AbaEmissoes({ router }: { router: ReturnType<typeof useRouter> }) {
         <div style={s.vazio}>
           <span style={{ fontSize: '2.5rem' }}>📭</span>
           <p style={{ color: colors.textSecondary, fontFamily: fonts.body, margin: 0 }}>Nenhuma NF-e encontrada.</p>
-          <p style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: '0.8rem', margin: 0 }}>Configure o certificado digital e clique em "Capturar Agora".</p>
+          <p style={{ color: colors.textMuted, fontFamily: fonts.body, fontSize: '0.8rem', margin: 0 }}>Configure o certificado digital na aba "Certificado Digital". A captura ocorre automaticamente.</p>
         </div>
       ) : (
         <>
@@ -374,7 +415,7 @@ const s: Record<string, React.CSSProperties> = {
   titulo: { fontSize: '1.5rem', fontWeight: 700, color: colors.textPrimary, margin: '0 0 0.25rem', fontFamily: fonts.title },
   subtitulo: { fontSize: '0.875rem', color: colors.textSecondary, margin: 0, fontFamily: fonts.body },
   abas: { display: 'flex', gap: '0.25rem', marginBottom: '1.25rem', borderBottom: `1px solid ${colors.border}`, paddingBottom: '0' },
-  aba: { padding: '0.5rem 1rem', background: 'none', border: 'none', borderBottom: '2px solid transparent', color: colors.textSecondary, fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', fontFamily: fonts.body, marginBottom: '-1px' },
+  aba: { padding: '0.5rem 1rem', background: 'none', border: 'none', borderBottomWidth: '2px', borderBottomStyle: 'solid', borderBottomColor: 'transparent', color: colors.textSecondary, fontSize: '0.875rem', fontWeight: 500, cursor: 'pointer', fontFamily: fonts.body, marginBottom: '-1px' },
   abaAtiva: { color: colors.accent, borderBottomColor: colors.accent },
   card: { backgroundColor: colors.bgCard, borderRadius: radius.lg, padding: '1.25rem', border: `1px solid ${colors.border}` },
   filtrosGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' },

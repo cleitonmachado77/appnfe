@@ -30,6 +30,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setAutenticado(true);
   }, [router]);
 
+  useEffect(() => {
+    function onPerfilAtualizado() {
+      setNome(localStorage.getItem('nome') ?? '');
+    }
+    window.addEventListener('perfil-atualizado', onPerfilAtualizado);
+    return () => window.removeEventListener('perfil-atualizado', onPerfilAtualizado);
+  }, []);
+
   function handleLogout() {
     clearToken();
     router.replace('/login');

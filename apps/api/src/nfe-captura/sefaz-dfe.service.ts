@@ -1,9 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import * as forge from 'node-forge';
 import { parseStringPromise } from 'xml2js';
-import { createSign } from 'crypto';
 import { gunzipSync } from 'zlib';
 
 export interface DocumentoDfe {
@@ -44,26 +42,24 @@ export class SefazDfeService {
     cnpj: string,
     ultNsu: string,
     certificado: CertificadoA1,
-    ambiente: 1 | 2 = 1, // 1=produção, 2=homologação
-    cUF = 35, // SP padrão; pode ser parametrizado
+    ambiente: 1 | 2 = 1,
+    cUF = 35,
   ): Promise<RespostaDfe> {
     const tpAmb = ambiente.toString();
     const nsuFormatado = ultNsu.padStart(15, '0');
 
     const xmlConsulta = this.montarXmlConsulta(cnpj, nsuFormatado, tpAmb, cUF);
-    const { privateKey, certPem } = this.extrairCertificado(certificado);
-    const xmlAssinado = this.assinarXml(xmlConsulta, privateKey, certPem);
-    const soapEnvelope = this.montarSoapEnvelope(xmlAssinado, tpAmb);
+    const soapEnvelope = this.montarSoapEnvelope(xmlConsulta);
 
     const endpoint = ambiente === 1 ? this.endpointProducao : this.endpointHomologacao;
+
+    this.logger.debug(`Envelope SOAP enviado para ${endpoint}`);
 
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(endpoint, soapEnvelope, {
           headers: {
-            'Content-Type': 'text/xml; charset=utf-8',
-            SOAPAction:
-              'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse',
+            'Content-Type': 'application/soap+xml; charset=utf-8',
           },
           httpsAgent: this.criarAgentHttps(certificado),
           timeout: 30000,
@@ -106,80 +102,17 @@ export class SefazDfeService {
       `</distDFeInt>`;
   }
 
-  private montarSoapEnvelope(xmlAssinado: string, tpAmb: string): string {
+  private montarSoapEnvelope(xmlConsulta: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>` +
       `<soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ` +
       `xmlns:xsd="http://www.w3.org/2001/XMLSchema" ` +
       `xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
-      `<soap12:Header>` +
-      `<nfeCabecMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">` +
-      `<cUF>AN</cUF><versaoDados>1.01</versaoDados>` +
-      `</nfeCabecMsg>` +
-      `</soap12:Header>` +
       `<soap12:Body>` +
       `<nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">` +
-      `<nfeDadosMsg>${xmlAssinado}</nfeDadosMsg>` +
+      `<nfeDadosMsg>${xmlConsulta}</nfeDadosMsg>` +
       `</nfeDistDFeInteresse>` +
       `</soap12:Body>` +
       `</soap12:Envelope>`;
-  }
-
-  private assinarXml(xml: string, privateKeyPem: string, certPem: string): string {
-    // Adiciona Id para referência da assinatura
-    const xmlComId = xml.replace('<distDFeInt ', '<distDFeInt Id="distDFeInt" ');
-
-    // Calcula digest SHA1 do elemento
-    const sign = createSign('SHA1');
-    sign.update(xmlComId);
-    const signature = sign.sign(privateKeyPem, 'base64');
-
-    // Extrai apenas o corpo do certificado (sem header/footer PEM)
-    const certBody = certPem
-      .replace('-----BEGIN CERTIFICATE-----', '')
-      .replace('-----END CERTIFICATE-----', '')
-      .replace(/\n/g, '');
-
-    const signatureXml =
-      `<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-      `<SignedInfo>` +
-      `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-      `<SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>` +
-      `<Reference URI="#distDFeInt">` +
-      `<Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms>` +
-      `<DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>` +
-      `<DigestValue>${this.calcularDigest(xmlComId)}</DigestValue>` +
-      `</Reference>` +
-      `</SignedInfo>` +
-      `<SignatureValue>${signature}</SignatureValue>` +
-      `<KeyInfo><X509Data><X509Certificate>${certBody}</X509Certificate></X509Data></KeyInfo>` +
-      `</Signature>`;
-
-    return xmlComId.replace('</distDFeInt>', `${signatureXml}</distDFeInt>`);
-  }
-
-  private calcularDigest(xml: string): string {
-    const { createHash } = require('crypto');
-    return createHash('sha1').update(xml).digest('base64');
-  }
-
-  private extrairCertificado(cert: CertificadoA1): { privateKey: string; certPem: string } {
-    const pfxBuffer = Buffer.from(cert.pfxBase64, 'base64');
-    const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'));
-    const pfxAsn1 = forge.asn1.fromDer(pfxDer);
-    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, cert.senha);
-
-    const bags = pfx.getBags({ bagType: forge.pki.oids.certBag });
-    const certBag = bags[forge.pki.oids.certBag]?.[0];
-    if (!certBag?.cert) throw new Error('Certificado não encontrado no PFX');
-
-    const keyBags = pfx.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
-    const keyBag = keyBags[forge.pki.oids.pkcs8ShroudedKeyBag]?.[0];
-    if (!keyBag?.key) throw new Error('Chave privada não encontrada no PFX');
-
-    return {
-      privateKey: forge.pki.privateKeyToPem(keyBag.key),
-      certPem: forge.pki.certificateToPem(certBag.cert),
-    };
   }
 
   private criarAgentHttps(cert: CertificadoA1) {

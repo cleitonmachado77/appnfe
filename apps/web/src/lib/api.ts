@@ -618,6 +618,32 @@ export async function getMinhaContaInfo(token: string): Promise<{ id: string; no
   return res.json();
 }
 
+export async function atualizarMinhaEmpresa(dados: Record<string, string | null>, token: string): Promise<Record<string, any>> {
+  const res = await apiFetch(`${API_URL}/usuarios/minha-empresa`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dados),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao atualizar empresa');
+  }
+  return res.json();
+}
+
+export async function atualizarMeuPerfil(dados: { nome?: string; email?: string; senha_atual?: string; nova_senha?: string }, token: string): Promise<Record<string, any>> {
+  const res = await apiFetch(`${API_URL}/usuarios/me`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(dados),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao atualizar perfil');
+  }
+  return res.json();
+}
+
 // ---- Audit Logs ----
 
 export interface AuditLogEntry {
@@ -945,11 +971,24 @@ export async function getCruzamentoNfe(token: string): Promise<CruzamentoRespons
   return res.json();
 }
 
-export async function dispararCaptura(token: string): Promise<void> {
-  await apiFetch(`${API_URL}/nfe-emitidas/capturar`, {
+export async function dispararCaptura(token: string): Promise<{ message: string; cStat?: string; documentos?: number }> {
+  const res = await apiFetch(`${API_URL}/nfe-emitidas/capturar`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.message ?? 'Erro ao capturar NF-e');
+  }
+  return res.json();
+}
+
+export async function getControleNsu(token: string): Promise<{ ult_nsu: string; max_nsu: string | null; atualizado_em: string } | null> {
+  const res = await apiFetch(`${API_URL}/nfe-emitidas/controle-nsu`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+  return res.json();
 }
 
 export async function getCertificadoInfo(token: string): Promise<CertificadoInfo> {

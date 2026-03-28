@@ -9,8 +9,8 @@ export class NfeCapturaScheduler {
 
   constructor(private readonly nfeCapturaService: NfeCapturaService) {}
 
-  /** Executa a cada 5 minutos */
-  @Cron('0 */5 * * * *')
+  /** Executa a cada hora (respeitando o intervalo mínimo da SEFAZ) */
+  @Cron('0 0 * * * *')
   async executarCaptura(): Promise<void> {
     if (this.rodando) {
       this.logger.warn('Captura anterior ainda em andamento, pulando ciclo.');

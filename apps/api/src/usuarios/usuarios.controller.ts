@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { UsuariosService } from './usuarios.service';
 import { CriarUsuarioDto } from './criar-usuario.dto';
+import { AtualizarEmpresaDto } from './atualizar-empresa.dto';
+import { AtualizarPerfilDto } from './atualizar-perfil.dto';
 import { IsString, IsUUID, MinLength } from 'class-validator';
 
 class AlterarSenhaDto {
@@ -26,6 +28,20 @@ export class UsuariosController {
   @HttpCode(HttpStatus.OK)
   me(@Request() req: any) {
     return this.usuariosService.buscarPorId(req.user.userId);
+  }
+
+  @Put('me')
+  @HttpCode(HttpStatus.OK)
+  atualizarPerfil(@Body() dto: AtualizarPerfilDto, @Request() req: any) {
+    return this.usuariosService.atualizarPerfil(req.user.userId, dto);
+  }
+
+  @Put('minha-empresa')
+  @UseGuards(RolesGuard)
+  @Roles('ADMIN', 'USUARIO')
+  @HttpCode(HttpStatus.OK)
+  atualizarMinhaEmpresa(@Body() dto: AtualizarEmpresaDto, @Request() req: any) {
+    return this.usuariosService.atualizarEmpresa(req.user.empresa_id, dto);
   }
 
   // ---- Endpoints para usuários do painel (apenas ADMIN pode gerenciar) ----

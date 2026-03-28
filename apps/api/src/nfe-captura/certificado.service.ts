@@ -20,7 +20,20 @@ export class CertificadoService {
     senha: string,
   ): Promise<{ titular: string; validade: Date }> {
     // Valida o certificado antes de salvar
-    const { titular, validade } = this.validarPfx(pfxBuffer, senha);
+    const { titular, validade, cnpj: cnpjCert } = this.validarPfx(pfxBuffer, senha);
+
+    // Valida que o CNPJ do certificado corresponde ao da empresa
+    if (cnpjCert) {
+      const empresa = await this.empresaRepo.findOne({ where: { id: empresaId } });
+      if (empresa) {
+        const cnpjEmpresa = empresa.cnpj.replace(/\D/g, '');
+        if (cnpjCert !== cnpjEmpresa) {
+          throw new BadRequestException(
+            `O CNPJ do certificado (${cnpjCert}) não corresponde ao CNPJ da empresa (${cnpjEmpresa}).`,
+          );
+        }
+      }
+    }
 
     const pfxBase64 = pfxBuffer.toString('base64');
 
@@ -82,7 +95,8 @@ export class CertificadoService {
   async obterCertificado(empresaId: string): Promise<CertificadoA1 | null> {
     const empresa = await this.empresaRepo
       .createQueryBuilder('e')
-      .select(['e.id', 'e.cert_pfx_encrypted', 'e.cert_senha_encrypted', 'e.cert_validade'])
+      .addSelect('e.cert_pfx_encrypted')
+      .addSelect('e.cert_senha_encrypted')
       .where('e.id = :id', { id: empresaId })
       .getOne();
 
@@ -94,7 +108,7 @@ export class CertificadoService {
     };
   }
 
-  private validarPfx(pfxBuffer: Buffer, senha: string): { titular: string; validade: Date } {
+  private validarPfx(pfxBuffer: Buffer, senha: string): { titular: string; validade: Date; cnpj: string | null } {
     try {
       const pfxDer = forge.util.createBuffer(pfxBuffer.toString('binary'));
       const pfxAsn1 = forge.asn1.fromDer(pfxDer);
@@ -108,9 +122,48 @@ export class CertificadoService {
       const cn = cert.subject.getField('CN')?.value ?? 'Desconhecido';
       const validade = cert.validity.notAfter;
 
-      return { titular: cn, validade };
-    } catch {
+      if (validade < new Date()) {
+        throw new BadRequestException('Certificado expirado. Envie um certificado válido.');
+      }
+
+      // Extrai CNPJ do certificado (OID 2.16.76.1.3.3 na extensão subjectAltName)
+      const cnpj = this.extrairCnpjDoCertificado(cert);
+
+      return { titular: cn, validade, cnpj };
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
       throw new BadRequestException('Certificado inválido ou senha incorreta');
     }
+  }
+
+  /**
+   * Extrai o CNPJ do certificado digital A1 (e-CNPJ).
+   * O CNPJ fica no campo otherName da extensão subjectAltName, OID 2.16.76.1.3.3.
+   * Fallback: tenta extrair do CN (formato "...:<CNPJ>").
+   */
+  private extrairCnpjDoCertificado(cert: forge.pki.Certificate): string | null {
+    try {
+      const sanExt = cert.getExtension('subjectAltName') as any;
+      if (sanExt?.altNames) {
+        for (const alt of sanExt.altNames) {
+          // otherName com OID 2.16.76.1.3.3 contém o CNPJ
+          if (alt.type === 0 && alt.value) {
+            // O valor pode estar em ASN1; tenta extrair 14 dígitos do CNPJ
+            const raw = typeof alt.value === 'string'
+              ? alt.value
+              : JSON.stringify(alt.value);
+            const match = raw.match(/\d{14}/);
+            if (match) return match[0];
+          }
+        }
+      }
+    } catch {
+      // Extensão não encontrada ou formato inesperado
+    }
+
+    // Fallback: tenta extrair do CN (padrão "NOME:CNPJ")
+    const cn: string = cert.subject.getField('CN')?.value ?? '';
+    const cnpjMatch = cn.match(/(\d{14})/);
+    return cnpjMatch ? cnpjMatch[1] : null;
   }
 }

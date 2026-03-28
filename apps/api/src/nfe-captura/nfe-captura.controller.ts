@@ -68,10 +68,9 @@ export class NfeCapturaController {
   /** Dispara captura manual para a empresa do admin logado */
   @Post('capturar')
   @Roles('ADMIN', 'USUARIO')
-  @HttpCode(HttpStatus.ACCEPTED)
+  @HttpCode(HttpStatus.OK)
   async capturarManual(@Request() req: any) {
-    // Executa de forma assíncrona para não bloquear a resposta
-    this.nfeCapturaService.capturarTodasEmpresas().catch(() => {});
-    return { message: 'Captura iniciada em background' };
+    const empresaId: string = req.user.empresa_id;
+    return this.nfeCapturaService.capturarPorEmpresaId(empresaId);
   }
 }

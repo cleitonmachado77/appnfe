@@ -5,7 +5,10 @@ import * as bcrypt from 'bcrypt';
 import { Usuario, PerfilUsuario } from '../entities';
 import { Entrega, StatusEntrega } from '../entities/entrega.entity';
 import { TransferenciaEntrega, StatusTransferencia } from '../entities/transferencia-entrega.entity';
+import { Empresa } from '../entities/empresa.entity';
 import { CriarUsuarioDto } from './criar-usuario.dto';
+import { AtualizarEmpresaDto } from './atualizar-empresa.dto';
+import { AtualizarPerfilDto } from './atualizar-perfil.dto';
 
 @Injectable()
 export class UsuariosService {
@@ -16,12 +19,40 @@ export class UsuariosService {
     private readonly entregaRepository: Repository<Entrega>,
     @InjectRepository(TransferenciaEntrega)
     private readonly transferenciaRepository: Repository<TransferenciaEntrega>,
+    @InjectRepository(Empresa)
+    private readonly empresaRepository: Repository<Empresa>,
   ) {}
 
   async buscarPorId(id: string) {
     const u = await this.usuariosRepository.findOne({ where: { id }, relations: ['empresa'] });
     if (!u) throw new Error('Usuário não encontrado');
     const { senha_hash: _, ...resultado } = u;
+    return resultado;
+  }
+
+  async atualizarPerfil(userId: string, dto: AtualizarPerfilDto) {
+    const usuario = await this.usuariosRepository.findOne({ where: { id: userId } });
+    if (!usuario) throw new NotFoundException('Usuário não encontrado');
+
+    // Se está alterando senha, valida a senha atual
+    if (dto.nova_senha) {
+      if (!dto.senha_atual) throw new BadRequestException('Senha atual é obrigatória para alterar a senha');
+      const senhaValida = await bcrypt.compare(dto.senha_atual, usuario.senha_hash);
+      if (!senhaValida) throw new BadRequestException('Senha atual incorreta');
+      usuario.senha_hash = await bcrypt.hash(dto.nova_senha, 10);
+    }
+
+    // Se está alterando email, valida unicidade
+    if (dto.email && dto.email !== usuario.email) {
+      const existente = await this.usuariosRepository.findOne({ where: { email: dto.email } });
+      if (existente) throw new ConflictException('E-mail já está em uso');
+      usuario.email = dto.email;
+    }
+
+    if (dto.nome) usuario.nome = dto.nome;
+
+    await this.usuariosRepository.save(usuario);
+    const { senha_hash: _, ...resultado } = usuario;
     return resultado;
   }
 
@@ -202,4 +233,26 @@ export class UsuariosService {
       entregas_migradas: resultEntregas.affected ?? 0,
       transferencias_migradas: resultTransf.affected ?? 0,
     };
-  }}
+  }
+
+  async atualizarEmpresa(
+    empresaId: string,
+    dados: AtualizarEmpresaDto,
+  ): Promise<Empresa> {
+    const empresa = await this.empresaRepository.findOne({ where: { id: empresaId } });
+    if (!empresa) throw new NotFoundException('Empresa não encontrada');
+
+    // Se está alterando o CNPJ, valida unicidade
+    if (dados.cnpj && dados.cnpj !== empresa.cnpj) {
+      const cnpjLimpo = dados.cnpj.replace(/\D/g, '');
+      if (cnpjLimpo.length !== 14) throw new BadRequestException('CNPJ inválido');
+      const existente = await this.empresaRepository.findOne({ where: { cnpj: dados.cnpj } });
+      if (existente && existente.id !== empresaId) {
+        throw new ConflictException('CNPJ já cadastrado para outra empresa');
+      }
+    }
+
+    Object.assign(empresa, dados);
+    return this.empresaRepository.save(empresa);
+  }
+}

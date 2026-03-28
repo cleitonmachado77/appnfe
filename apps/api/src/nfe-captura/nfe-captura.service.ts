@@ -26,6 +26,27 @@ export class NfeCapturaService {
   ) {}
 
   /**
+   * Captura NF-e para uma empresa específica (por ID).
+   * Usado pelo endpoint de captura manual.
+   */
+  async capturarPorEmpresaId(empresaId: string): Promise<{ message: string; cStat?: string; documentos?: number }> {
+    const empresa = await this.empresaRepo.findOne({ where: { id: empresaId } });
+    if (!empresa) {
+      this.logger.warn(`Empresa ${empresaId} não encontrada para captura manual`);
+      throw new Error('Empresa não encontrada');
+    }
+
+    const certificado = await this.certificadoService.obterCertificado(empresaId);
+    if (!certificado) {
+      this.logger.warn(`Empresa ${empresa.cnpj} não possui certificado configurado`);
+      throw new Error('Certificado digital não configurado. Configure na aba Certificado.');
+    }
+
+    this.logger.log(`Iniciando captura manual para empresa ${empresa.cnpj} (${empresa.razao_social})`);
+    return this.capturarPorEmpresa(empresa, certificado);
+  }
+
+  /**
    * Executa a captura para todas as empresas ativas que possuem certificado configurado.
    * Chamado pelo scheduler a cada 5 minutos.
    */
@@ -49,7 +70,7 @@ export class NfeCapturaService {
   /**
    * Captura NF-e para uma empresa específica, processando todos os NSUs pendentes.
    */
-  async capturarPorEmpresa(empresa: Empresa, certificado: { pfxBase64: string; senha: string }): Promise<void> {
+  async capturarPorEmpresa(empresa: Empresa, certificado: { pfxBase64: string; senha: string }): Promise<{ message: string; cStat?: string; documentos?: number }> {
     const cnpjLimpo = empresa.cnpj.replace(/\D/g, '');
     let controle = await this.controleNsuRepo.findOne({ where: { empresa_id: empresa.id } });
 
@@ -61,21 +82,55 @@ export class NfeCapturaService {
       controle = await this.controleNsuRepo.save(controle);
     }
 
-    const ambiente = process.env.NODE_ENV === 'production' ? 1 : 2;
+    // Respeita intervalo mínimo de 1h da SEFAZ quando não há documentos novos
+    const agora = new Date();
+    const ultimaConsulta = controle.atualizado_em ? new Date(controle.atualizado_em) : null;
+    const diffMinutos = ultimaConsulta ? (agora.getTime() - ultimaConsulta.getTime()) / 60000 : Infinity;
+
+    // Se o último NSU == max_nsu (sem docs pendentes) e consultou há menos de 60 min, pula
+    if (controle.ult_nsu === controle.max_nsu && diffMinutos < 60) {
+      const restante = Math.ceil(60 - diffMinutos);
+      this.logger.log(`Empresa ${cnpjLimpo}: sem documentos pendentes, próxima consulta em ${restante} min`);
+      return {
+        message: `Sem documentos pendentes. A SEFAZ exige intervalo de 1h entre consultas quando não há novos documentos. Próxima consulta automática em ~${restante} minutos.`,
+        cStat: '137',
+        documentos: 0,
+      };
+    }
+
+    const ambiente = 1;
+    const cUF = this.ufParaCodigo(empresa.uf);
     let ultNsu = controle.ult_nsu;
     let continuar = true;
+    let totalDocumentos = 0;
+    let ultimoCstat = '';
+    let ultimoMotivo = '';
 
     while (continuar) {
-      this.logger.log(`Consultando SEFAZ para ${cnpjLimpo} a partir do NSU ${ultNsu}`);
+      this.logger.log(`Consultando SEFAZ para ${cnpjLimpo} a partir do NSU ${ultNsu} (cUF=${cUF}, ambiente=${ambiente})`);
 
       const resposta = await this.sefazDfeService.consultarDistribuicao(
         cnpjLimpo,
         ultNsu,
         certificado,
         ambiente as 1 | 2,
+        cUF,
       );
 
-      this.logger.log(`SEFAZ retornou cStat=${resposta.cStat} — ${resposta.xMotivo}`);
+      ultimoCstat = resposta.cStat;
+      ultimoMotivo = resposta.xMotivo;
+      this.logger.log(`SEFAZ retornou cStat=${resposta.cStat} — ${resposta.xMotivo} (docs: ${resposta.documentos.length})`);
+
+      // 656 = consumo indevido (aguardar 1h)
+      if (resposta.cStat === '656') {
+        // Atualiza timestamp para marcar que já tentou
+        await this.controleNsuRepo.update(controle.id, { max_nsu: controle.ult_nsu });
+        return {
+          message: 'A SEFAZ exige intervalo de 1h entre consultas quando não há novos documentos. Tente novamente mais tarde.',
+          cStat: '656',
+          documentos: 0,
+        };
+      }
 
       // 137 = nenhum documento novo; 138 = documentos encontrados
       if (resposta.cStat !== '138' && resposta.cStat !== '137') {
@@ -86,6 +141,7 @@ export class NfeCapturaService {
       for (const doc of resposta.documentos) {
         await this.processarDocumento(empresa.id, doc.nsu, doc.schema, doc.xmlBase64);
       }
+      totalDocumentos += resposta.documentos.length;
 
       // Atualiza NSU no controle
       await this.controleNsuRepo.update(controle.id, {
@@ -101,6 +157,14 @@ export class NfeCapturaService {
         resposta.documentos.length > 0 &&
         resposta.ultNSU !== resposta.maxNSU;
     }
+
+    return {
+      message: totalDocumentos > 0
+        ? `Captura concluída: ${totalDocumentos} documento(s) processado(s).`
+        : `Nenhum documento novo encontrado. SEFAZ: ${ultimoMotivo}`,
+      cStat: ultimoCstat,
+      documentos: totalDocumentos,
+    };
   }
 
   /**
@@ -313,5 +377,16 @@ export class NfeCapturaService {
 
   async obterControleNsu(empresaId: string): Promise<ControleNsu | null> {
     return this.controleNsuRepo.findOne({ where: { empresa_id: empresaId } });
+  }
+
+  /** Converte sigla UF para código IBGE. Padrão: 35 (SP). */
+  private ufParaCodigo(uf: string | null | undefined): number {
+    const mapa: Record<string, number> = {
+      AC: 12, AL: 27, AM: 13, AP: 16, BA: 29, CE: 23, DF: 53, ES: 32,
+      GO: 52, MA: 21, MG: 31, MS: 50, MT: 51, PA: 15, PB: 25, PE: 26,
+      PI: 22, PR: 41, RJ: 33, RN: 24, RO: 11, RR: 14, RS: 43, SC: 42,
+      SE: 28, SP: 35, TO: 17,
+    };
+    return mapa[(uf ?? '').toUpperCase()] ?? 35;
   }
 }
