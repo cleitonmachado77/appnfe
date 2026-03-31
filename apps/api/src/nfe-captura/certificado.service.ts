@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as forge from 'node-forge';
@@ -8,6 +8,8 @@ import { CertificadoA1 } from './sefaz-dfe.service';
 
 @Injectable()
 export class CertificadoService {
+  private readonly logger = new Logger(CertificadoService.name);
+
   constructor(
     @InjectRepository(Empresa)
     private readonly empresaRepo: Repository<Empresa>,
@@ -22,14 +24,14 @@ export class CertificadoService {
     // Valida o certificado antes de salvar
     const { titular, validade, cnpj: cnpjCert } = this.validarPfx(pfxBuffer, senha);
 
-    // Valida que o CNPJ do certificado corresponde ao da empresa
+    // Log informativo caso o CNPJ do certificado seja diferente do da empresa
     if (cnpjCert) {
       const empresa = await this.empresaRepo.findOne({ where: { id: empresaId } });
       if (empresa) {
         const cnpjEmpresa = empresa.cnpj.replace(/\D/g, '');
         if (cnpjCert !== cnpjEmpresa) {
-          throw new BadRequestException(
-            `O CNPJ do certificado (${cnpjCert}) não corresponde ao CNPJ da empresa (${cnpjEmpresa}).`,
+          this.logger.warn(
+            `CNPJ do certificado (${cnpjCert}) difere do CNPJ da empresa (${cnpjEmpresa}). Aceito mesmo assim.`,
           );
         }
       }
@@ -132,6 +134,7 @@ export class CertificadoService {
       return { titular: cn, validade, cnpj };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
+      this.logger.error(`Falha ao validar PFX: ${(err as Error).message}`, (err as Error).stack);
       throw new BadRequestException('Certificado inválido ou senha incorreta');
     }
   }

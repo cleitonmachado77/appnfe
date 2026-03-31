@@ -269,6 +269,27 @@ function AbaEmissoes({ router }: { router: ReturnType<typeof useRouter> }) {
 
 // ─── Aba: Certificado ────────────────────────────────────────────────────────
 
+function traduzirErroCertificado(msg: string): string {
+  const lower = msg.toLowerCase();
+
+  if (lower.includes('arquivo') && lower.includes('obrigatório'))
+    return '📎 Nenhum arquivo selecionado. Selecione o arquivo .pfx ou .p12 do seu certificado digital.';
+
+  if (lower.includes('senha') && lower.includes('obrigatória'))
+    return '🔑 A senha do certificado é obrigatória. Digite a senha fornecida pela certificadora.';
+
+  if (lower.includes('expirado') || lower.includes('vencido'))
+    return '⏰ Este certificado está expirado. Renove seu certificado A1 junto à certificadora e tente novamente.';
+
+  if (lower.includes('inválido') || lower.includes('senha incorreta'))
+    return '❌ Certificado inválido ou senha incorreta. Verifique se o arquivo é um .pfx/.p12 válido e se a senha está correta.';
+
+  if (lower.includes('tamanho') || lower.includes('file too large') || lower.includes('limit'))
+    return '📦 O arquivo é muito grande. O certificado A1 (.pfx/.p12) deve ter no máximo 1 MB.';
+
+  return msg || 'Ocorreu um erro inesperado ao enviar o certificado. Tente novamente.';
+}
+
 function AbaCertificado() {
   const router = useRouter();
   const [info, setInfo] = useState<CertificadoInfo | null>(null);
@@ -304,7 +325,8 @@ function AbaCertificado() {
       setArquivo(null); setSenha('');
       await carregarInfo();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Erro ao enviar certificado');
+      const msg = e instanceof Error ? e.message : '';
+      setErro(traduzirErroCertificado(msg));
     } finally { setEnviando(false); }
   }
 

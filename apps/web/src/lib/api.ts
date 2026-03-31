@@ -1014,7 +1014,7 @@ export async function uploadCertificado(
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data?.message ?? 'Erro ao enviar certificado');
+    throw new Error(data?.mensagem ?? data?.message ?? 'Erro ao enviar certificado');
   }
   return res.json();
 }
