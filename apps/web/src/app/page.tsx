@@ -16,7 +16,7 @@ export default function Home() {
       return;
     }
 
-    if (perfil === 'ADMIN') {
+    if (perfil === 'ADMIN' || perfil === 'USUARIO') {
       router.replace('/admin');
     } else if (perfil === 'SUPER_ADMIN') {
       router.replace('/super-admin');

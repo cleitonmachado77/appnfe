@@ -14,7 +14,7 @@ async function apiFetch(input: RequestInfo, init?: RequestInit): Promise<Respons
 
 export interface AuthResponse {
   token: string;
-  perfil: 'ENTREGADOR' | 'ADMIN' | 'SUPER_ADMIN';
+  perfil: 'ENTREGADOR' | 'ADMIN' | 'USUARIO' | 'SUPER_ADMIN';
   nome: string;
 }
 

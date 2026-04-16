@@ -22,7 +22,7 @@ export default function LoginPage() {
       setToken(data.token, data.perfil, data.nome);
       if (data.perfil === 'SUPER_ADMIN') {
         router.push('/super-admin');
-      } else if (data.perfil === 'ADMIN') {
+      } else if (data.perfil === 'ADMIN' || data.perfil === 'USUARIO') {
         router.push('/admin');
       } else {
         router.push('/entregador');
